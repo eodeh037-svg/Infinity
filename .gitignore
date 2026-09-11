@@ -1,23 +1,31 @@
 node_modules/
 .expo/
 dist/
+web-build/
+
 npm-debug.*
+*.orig.*
+
+.env
+.env.*
+!.env.example
+
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
-*.orig.*
-web-build/
-# expo router
+
+# Expo Router
 expo-env.d.ts
 
-
-ios
-android
+# Native projects
+ios/
+android/
 
 # macOS
 .DS_Store
 
-# Temporary files created by Metro to check the health of the file watcher
+# Metro
 .metro-health-check*
