@@ -57,6 +57,7 @@ export default function SignUp() {
     }
   }
 
+
   return (
     <ScrollView
       className="flex-1 bg-[#05050d]"
