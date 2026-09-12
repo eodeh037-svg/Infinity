@@ -1,53 +1,57 @@
 import { View, Text, TextInput, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native'
-import { useState, useCallback, useRef, useLayoutEffect } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
-import { getCurrencyPairs, formatPrice } from '../../lib/services/dataService'
+import { getCurrencyPairs } from '../../lib/services/dataService'
 import { CurrencyPair } from '../../types'
 import MarketCard from '../../component/MarketCard'
 
-const CATEGORIES = ['Major', 'Minor', 'Exotic', 'Crypto', 'Commodities']
+const CATEGORIES = ['All', 'Major', 'Minor', 'Exotic', 'Crypto', 'Commodities']
 const REFRESH_INTERVAL = 60000
 
 export default function MarketsScreen() {
-  const [pairs, setPairs] = useState<CurrencyPair[]>([])
+  const [allPairs, setAllPairs] = useState<CurrencyPair[]>([])
   const [filteredPairs, setFilteredPairs] = useState<CurrencyPair[]>([])
-  const [selectedCategory, setSelectedCategory] = useState('Major')
+  const [selectedCategory, setSelectedCategory] = useState('All')
   const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const loadedRef = useRef(false)
 
-  useLayoutEffect(() => {
-    loadPairs()
-    intervalRef.current = setInterval(loadPairs, REFRESH_INTERVAL)
+  useEffect(() => {
+    loadAllPairs()
+    intervalRef.current = setInterval(() => loadAllPairs(true), REFRESH_INTERVAL)
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [selectedCategory])
+  }, [])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     filterPairs()
-  }, [pairs, selectedCategory, search])
+  }, [allPairs, selectedCategory, search])
 
-  async function loadPairs() {
+  async function loadAllPairs(isRefresh = false) {
     try {
-      setLoading(true)
-      const data = await getCurrencyPairs(selectedCategory)
-      setPairs(data)
+      const data = await getCurrencyPairs('all')
+      setAllPairs(data)
+      if (!loadedRef.current) setLoading(false)
+      loadedRef.current = true
     } catch (error) {
       console.error('Failed to load pairs:', error)
+      if (!loadedRef.current) setLoading(false)
+      loadedRef.current = true
     } finally {
-      setLoading(false)
       setRefreshing(false)
     }
   }
 
   function filterPairs() {
-    setLoading(true)
-
-    let result = pairs
+    let result = allPairs
+    if (selectedCategory !== 'All') {
+      result = result.filter(p => p.category === selectedCategory)
+    }
     if (search) {
       const lower = search.toLowerCase()
       result = result.filter(
@@ -57,26 +61,12 @@ export default function MarketsScreen() {
       )
     }
     setFilteredPairs(result)
-    setLoading(false)
-  }
-
-  async function handleCategoryChange(category: string) {
-    setSelectedCategory(category)
-    setLoading(true)
-    try {
-      const data = await getCurrencyPairs(category)
-      setPairs(data)
-    } catch (error) {
-      console.error('Failed to load pairs:', error)
-    } finally {
-      setLoading(false)
-    }
   }
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
-    loadPairs()
-  }, [selectedCategory])
+    loadAllPairs(true)
+  }, [])
 
   if (loading) {
     return (
@@ -125,7 +115,7 @@ export default function MarketsScreen() {
               {CATEGORIES.map((category) => (
                 <Pressable
                   key={category}
-                  onPress={() => handleCategoryChange(category)}
+                  onPress={() => setSelectedCategory(category)}
                   className={`rounded-full px-4 py-2 ${
                     selectedCategory === category
                       ? 'bg-[#8B5CF6]'
@@ -161,28 +151,20 @@ export default function MarketsScreen() {
           </View>
 
           <View className="rounded-2xl border border-[#1C1C2E] bg-[#0D0D14]">
-            {loading ? (
+            {filteredPairs.map((pair) => (
+              <MarketCard
+                key={pair.symbol}
+                pair={pair}
+                onPress={() => router.push(`/pair/${pair.symbol.replace('/', '_')}`)}
+              />
+            ))}
+            {filteredPairs.length === 0 && (
               <View className="items-center py-10">
-                <ActivityIndicator size="small" color="#8B5CF6" />
+                <Ionicons name="search-outline" size={32} color="#64646E" />
+                <Text className="mt-2 text-[14px] text-[#64646E]">
+                  No pairs found
+                </Text>
               </View>
-            ) : (
-              <>
-                {filteredPairs.map((pair) => (
-                  <MarketCard
-                    key={pair.symbol}
-                    pair={pair}
-                    onPress={() => router.push(`/pair/${pair.symbol.replace('/', '_')}`)}
-                  />
-                ))}
-                {filteredPairs.length === 0 && (
-                  <View className="items-center py-10">
-                    <Ionicons name="search-outline" size={32} color="#64646E" />
-                    <Text className="mt-2 text-[14px] text-[#64646E]">
-                      No pairs found
-                    </Text>
-                  </View>
-                )}
-              </>
             )}
           </View>
         </View>
