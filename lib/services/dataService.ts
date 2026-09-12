@@ -16,6 +16,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
+import { waitForAuth } from '../firebase/authService'
+export { waitForAuth }
 import { CurrencyPair, Trade, UserProfile, MarketNews } from '../../types'
 import { getQuote, getMultipleQuotes } from '../api/finnhub'
 
@@ -117,18 +119,15 @@ export function getCurrentUser() {
 }
 
 export function getCurrentUserId(): string {
-  const user = getCurrentUser()
-  return user?.uid ?? 'anonymous'
+  return getAuth().currentUser?.uid ?? 'anonymous'
 }
 
 export function getCurrentUserName(): string {
-  const user = getCurrentUser()
-  return user?.displayName ?? user?.email?.split('@')[0] ?? 'Trader'
+  return getAuth().currentUser?.displayName ?? getAuth().currentUser?.email?.split('@')[0] ?? 'Trader'
 }
 
 export function getCurrentUserEmail(): string {
-  const user = getCurrentUser()
-  return user?.email ?? ''
+  return getAuth().currentUser?.email ?? ''
 }
 
 export async function getCurrencyPairs(category?: string): Promise<CurrencyPair[]> {
@@ -300,16 +299,19 @@ function setCachedQuote(symbol: string, data: any) {
 const quoteCache = new Map<string, { data: any; timestamp: number }>()
 
 export async function isUsernameTaken(userName: string): Promise<boolean> {
+  await waitForAuth()
   const q = query(collection(db, 'users'), where('userName', '==', userName.trim()))
   const snap = await getDocs(q)
   return !snap.empty
 }
 
 export async function getUserProfile(): Promise<UserProfile> {
+  await waitForAuth()
   const userId = getCurrentUserId()
 
   const defaultProfile: UserProfile = {
     id: userId,
+    userId: userId,
     userName: getCurrentUserName(),
     email: getCurrentUserEmail(),
     plan: 'free',
@@ -337,6 +339,7 @@ export async function getUserProfile(): Promise<UserProfile> {
 }
 
 export async function updateBalance(amount: number): Promise<void> {
+  await waitForAuth()
   const userId = getCurrentUserId()
   try {
     const userRef = doc(db, 'users', userId)
@@ -354,6 +357,7 @@ export async function updateBalance(amount: number): Promise<void> {
 }
 
 export async function saveTrade(trade: Omit<Trade, 'id'>): Promise<string> {
+  await waitForAuth()
   const docRef = await addDoc(collection(db, 'trades'), {
     pair: trade.pair,
     signal: trade.signal,
@@ -380,6 +384,7 @@ export async function closeTrade(
   profitLoss: number,
   profitLossPercent: number
 ): Promise<void> {
+  await waitForAuth()
   const tradeRef = doc(db, 'trades', tradeId)
   await updateDoc(tradeRef, {
     exitPrice,
@@ -405,10 +410,12 @@ export async function closeTrade(
 }
 
 export async function deleteTrade(tradeId: string): Promise<void> {
+  await waitForAuth()
   await deleteDoc(doc(db, 'trades', tradeId))
 }
 
 export async function getUserTrades(tradeLimit = 50): Promise<Trade[]> {
+  await waitForAuth()
   const userId = getCurrentUserId()
   try {
     const q = query(
@@ -432,6 +439,7 @@ export async function getUserTrades(tradeLimit = 50): Promise<Trade[]> {
 }
 
 export async function getUserOpenTrades(): Promise<Trade[]> {
+  await waitForAuth()
   const userId = getCurrentUserId()
   try {
     const q = query(

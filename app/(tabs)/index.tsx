@@ -11,6 +11,7 @@ import {
   getGreeting,
   isMarketOpen,
   formatPrice,
+  waitForAuth,
 } from '../../lib/services/dataService'
 import { CurrencyPair, UserProfile, Trade, MarketNews } from '../../types'
 
@@ -34,6 +35,7 @@ export default function HomeScreen() {
   async function loadData() {
     try {
       setLoading(true)
+      await waitForAuth()
       const [userData, newsData, tradesData, pairsData] = await Promise.all([
         getUserProfile(),
         getMarketNews(),
