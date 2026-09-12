@@ -299,6 +299,12 @@ function setCachedQuote(symbol: string, data: any) {
 
 const quoteCache = new Map<string, { data: any; timestamp: number }>()
 
+export async function isUsernameTaken(userName: string): Promise<boolean> {
+  const q = query(collection(db, 'users'), where('userName', '==', userName.trim()))
+  const snap = await getDocs(q)
+  return !snap.empty
+}
+
 export async function getUserProfile(): Promise<UserProfile> {
   const userId = getCurrentUserId()
 

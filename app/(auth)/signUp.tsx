@@ -12,6 +12,7 @@ import { router } from 'expo-router'
 import { useState } from 'react'
 
 import { createAccount } from '../../lib/firebase/authService'
+import { isUsernameTaken } from '../../lib/services/dataService'
 
 export default function SignUp() {
   const [userName, setUserName] = useState('')
@@ -36,6 +37,12 @@ export default function SignUp() {
     setIsSubmitting(true)
 
     try {
+      const taken = await isUsernameTaken(userName)
+      if (taken) {
+        setError('Username is already taken.')
+        setIsSubmitting(false)
+        return
+      }
       await createAccount(email, password, userName)
       router.replace('/(tabs)')
     } catch (caughtError) {
@@ -49,6 +56,7 @@ export default function SignUp() {
       setIsSubmitting(false)
     }
   }
+
 
   return (
     <ScrollView
