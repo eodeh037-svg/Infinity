@@ -1,13 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userName", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "trades",
       "queryScope": "COLLECTION",
       "fields": [
