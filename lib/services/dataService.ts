@@ -6,6 +6,7 @@ import {
   getDocs,
   getDoc,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -321,7 +322,7 @@ export async function getUserProfile(): Promise<UserProfile> {
       return userSnap.data() as UserProfile
     }
 
-    await addDoc(collection(db, 'users'), defaultProfile)
+    await setDoc(userRef, defaultProfile)
     return defaultProfile
   } catch (error) {
     console.error('Failed to load user profile:', error)
