@@ -126,6 +126,7 @@ export default function HistoryScreen() {
     return (
       <SafeAreaView className="flex-1 items-center justify-center bg-[#0A0A12]">
         <ActivityIndicator size="large" color="#8B5CF6" />
+        <Text className="mt-4 text-[13px] text-[#64646E]">Loading hang tight...</Text>
       </SafeAreaView>
     )
   }

@@ -45,8 +45,8 @@ export default function ChartScreen() {
       const decoded = symbol.replace(/_/g, '/')
       const [base, quote] = decoded.split('/')
       const interval = INTERVAL_MAP[selectedTimeframe] || '4h'
-      const data = await getTwelveData(base, quote, interval, '100')
-      setCandles(data)
+      const candleResult = await getTwelveData(base, quote, interval, '100')
+      setCandles(candleResult.data)
       setPairName(decoded)
     } catch (error) {
       console.error('Failed to load chart data:', error)

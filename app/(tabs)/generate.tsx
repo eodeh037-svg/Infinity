@@ -3,10 +3,16 @@ import { useState, useEffect, useRef } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import * as Clipboard from 'expo-clipboard'
 import { getCurrencyPairs, saveTrade, formatPrice, getCurrentUserId } from '../../lib/services/dataService'
 import { getTwelveData } from '../../lib/api/finnhub'
 import { generateSignal, SignalResult } from '../../lib/signals/signalEngine'
+import { analyzeMultiTimeframe, MultiTimeframeResult } from '../../lib/signals/multiTimeframe'
+import { STRATEGY_LIST, StrategyKey, getStrategy, getStrategyTimeframes } from '../../lib/signals/strategies'
+import { getAssetType, getMarketStatus, MarketStatus, AssetType } from '../../lib/services/marketStatus'
 import { CurrencyPair } from '../../types'
+import { generateMultiTimeframeSignal } from '../../lib/api/client'
+import { Candle } from '../../lib/indicators/types'
 
 const CATEGORIES = ['Major', 'Minor', 'Exotic', 'Crypto', 'Commodities']
 const ANALYSIS_STEPS = [
@@ -68,18 +74,34 @@ export default function GenerateScreen() {
   const [pairs, setPairs] = useState<CurrencyPair[]>([])
   const [filteredPairs, setFilteredPairs] = useState<CurrencyPair[]>([])
   const [selectedCategory, setSelectedCategory] = useState('Major')
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyKey>('general')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [activeStep, setActiveStep] = useState(0)
   const [selectedPair, setSelectedPair] = useState<CurrencyPair | null>(null)
   const [signalResult, setSignalResult] = useState<SignalResult | null>(null)
+  const [multiTimeframeResult, setMultiTimeframeResult] = useState<MultiTimeframeResult | null>(null)
   const [showSignalModal, setShowSignalModal] = useState(false)
   const [accountSize, setAccountSize] = useState('')
+  const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null)
+  const statusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     loadPairs()
+    return () => {
+      if (statusIntervalRef.current) clearInterval(statusIntervalRef.current)
+    }
   }, [])
+
+  useEffect(() => {
+    updateMarketStatus()
+    if (statusIntervalRef.current) clearInterval(statusIntervalRef.current)
+    statusIntervalRef.current = setInterval(updateMarketStatus, 60000)
+    return () => {
+      if (statusIntervalRef.current) clearInterval(statusIntervalRef.current)
+    }
+  }, [selectedCategory])
 
   useEffect(() => {
     filterPairs()
@@ -88,7 +110,7 @@ export default function GenerateScreen() {
   async function loadPairs() {
     try {
       setLoading(true)
-      const data = await getCurrencyPairs(selectedCategory)
+      const data = await getCurrencyPairs('all')
       setPairs(data)
     } catch (error) {
       console.error('Failed to load pairs:', error)
@@ -98,9 +120,10 @@ export default function GenerateScreen() {
   }
 
   function filterPairs() {
-    setLoading(true)
-
     let result = pairs
+    if (selectedCategory) {
+      result = result.filter(p => p.category === selectedCategory)
+    }
     if (search) {
       const lower = search.toLowerCase()
       result = result.filter(
@@ -110,27 +133,31 @@ export default function GenerateScreen() {
       )
     }
     setFilteredPairs(result)
-    setLoading(false)
   }
 
-  async function handleCategoryChange(category: string) {
+  function handleCategoryChange(category: string) {
     setSelectedCategory(category)
-    setLoading(true)
-    try {
-      const data = await getCurrencyPairs(category)
-      setPairs(data)
-    } catch (error) {
-      console.error('Failed to load pairs:', error)
-    } finally {
-      setLoading(false)
-    }
+  }
+
+  function updateMarketStatus() {
+    const assetType: AssetType = selectedCategory === 'Crypto' ? 'crypto' : selectedCategory === 'Commodities' ? 'commodities' : 'forex'
+    setMarketStatus(getMarketStatus(assetType))
   }
 
   async function handleGenerateSignal(pair: CurrencyPair) {
+    const assetType = getAssetType(pair)
+    const status = getMarketStatus(assetType)
+
+    if (!status.isOpen) {
+      Alert.alert('Market Closed', status.message)
+      return
+    }
+
     setSelectedPair(pair)
     setGenerating(true)
     setShowSignalModal(true)
     setSignalResult(null)
+    setMultiTimeframeResult(null)
     setActiveStep(0)
 
     let step = 0
@@ -140,26 +167,40 @@ export default function GenerateScreen() {
     }, 2000)
 
     try {
-      const [base, quote] = pair.symbol.split('/')
-      const candles = await getTwelveData(base, quote)
+      const symbol = pair.symbol
+      const strategy = getStrategy(selectedStrategy)
+      const timeframes = getStrategyTimeframes(selectedStrategy)
 
-      if (candles.length < 60) {
-        clearInterval(stepInterval)
-        Alert.alert('Insufficient Data', 'Not enough historical data to generate a reliable signal.')
-        setShowSignalModal(false)
-        return
+      const candleData = await generateMultiTimeframeSignal(symbol, selectedStrategy, 250)
+
+      const candleMap: Record<string, Candle[]> = {}
+      for (const tf of timeframes) {
+        candleMap[tf] = (candleData.candleData[tf] ?? []) as Candle[]
       }
 
       await new Promise(resolve => setTimeout(resolve, 500))
       setActiveStep(ANALYSIS_STEPS.length - 1)
       await new Promise(resolve => setTimeout(resolve, 600))
 
-      const result = generateSignal(candles, parseFloat(accountSize) || 0)
+      const mtResult = analyzeMultiTimeframe(candleMap, selectedStrategy, parseFloat(accountSize) || 0)
+      setMultiTimeframeResult(mtResult)
+
+      const allCandles: Candle[] = []
+      for (const tf of timeframes) {
+        const tfCandles = candleMap[tf] ?? []
+        if (tfCandles.length > allCandles.length) {
+          allCandles.splice(0, allCandles.length, ...tfCandles)
+        }
+      }
+
+      if (allCandles.length >= 100) {
+        const singleResult = generateSignal(allCandles, parseFloat(accountSize) || 0)
+        setSignalResult(singleResult)
+      }
+
       clearInterval(stepInterval)
       setActiveStep(ANALYSIS_STEPS.length)
       await new Promise(resolve => setTimeout(resolve, 300))
-
-      setSignalResult(result)
     } catch (error) {
       console.error('Failed to generate signal:', error)
       clearInterval(stepInterval)
@@ -170,23 +211,30 @@ export default function GenerateScreen() {
     }
   }
 
+  async function handleCopyValue(value: string) {
+    await Clipboard.setStringAsync(value)
+  }
+
   async function handleSaveTrade() {
-    if (!signalResult || !selectedPair) return
+    if (!selectedPair) return
+
+    const resultToSave = signalResult
+    if (!resultToSave) return
 
     try {
       await saveTrade({
         pair: selectedPair.symbol,
-        signal: signalResult.signal,
-        entry: formatPrice(signalResult.entry),
+        signal: resultToSave.signal,
+        entry: formatPrice(resultToSave.entry),
         exitPrice: null,
-        stopLoss: signalResult.stopLoss ? formatPrice(signalResult.stopLoss) : '',
-        takeProfit: signalResult.takeProfit ? formatPrice(signalResult.takeProfit) : '',
-        riskReward: signalResult.riskReward ? `1:${signalResult.riskReward.toFixed(2)}` : '1:2',
-        confidence: signalResult.confidence,
+        stopLoss: resultToSave.stopLoss ? formatPrice(resultToSave.stopLoss) : '',
+        takeProfit: resultToSave.takeProfit ? formatPrice(resultToSave.takeProfit) : '',
+        riskReward: resultToSave.riskReward ? `1:${resultToSave.riskReward.toFixed(2)}` : '1:2',
+        confidence: multiTimeframeResult ? multiTimeframeResult.overallScore : resultToSave.confidence,
         profitLoss: 0,
         profitLossPercent: 0,
         status: 'open',
-        reasons: signalResult.reasons,
+        reasons: multiTimeframeResult ? multiTimeframeResult.reasoning : resultToSave.reasons,
         createdAt: Date.now(),
         closedAt: null,
         userId: getCurrentUserId(),
@@ -248,6 +296,43 @@ export default function GenerateScreen() {
             ) : null}
           </View>
 
+          <View className="mb-4">
+            <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
+              TRADING STRATEGY
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+            >
+              <View className="flex-row gap-2">
+                {STRATEGY_LIST.map((strategy) => (
+                  <Pressable
+                    key={strategy.key}
+                    onPress={() => setSelectedStrategy(strategy.key)}
+                    className={`rounded-full px-4 py-2 ${
+                      selectedStrategy === strategy.key
+                        ? 'bg-[#8B5CF6]'
+                        : 'bg-[#1C1C2E]'
+                    }`}
+                  >
+                    <Text
+                      className={`text-[13px] font-medium ${
+                        selectedStrategy === strategy.key
+                          ? 'text-white'
+                          : 'text-[#64646E]'
+                      }`}
+                    >
+                      {strategy.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+            <Text className="mt-1 text-[11px] text-[#64646E]">
+              {getStrategy(selectedStrategy).description}
+            </Text>
+          </View>
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -284,40 +369,58 @@ export default function GenerateScreen() {
                 <Text className="text-[14px] text-[#64646E]">Loading pairs...</Text>
               </View>
             ) : (
-              filteredPairs.map((pair) => (
-                <Pressable
-                  key={pair.symbol}
-                  onPress={() => handleGenerateSignal(pair)}
-                  disabled={generating}
-                  className="flex-row items-center justify-between border-b border-[#1C1C2E] px-4 py-4"
-                >
-                  <View className="flex-row items-center gap-3">
-                    <View className="flex-row">
-                      <Text className="text-lg">{pair.flag1}</Text>
-                      <Text className="text-lg -ml-1">{pair.flag2}</Text>
-                    </View>
-                    <View>
-                      <Text className="text-[15px] font-semibold text-white">
-                        {pair.symbol}
-                      </Text>
-                      <Text className="text-[12px] text-[#64646E]">
-                        {formatPrice(pair.price)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View className="flex-row items-center gap-3">
-                    <Text
-                      className={`text-[13px] font-medium ${
-                        pair.changePercent >= 0 ? 'text-[#22C55E]' : 'text-[#EF4444]'
-                      }`}
-                    >
-                      {pair.changePercent >= 0 ? '+' : ''}{pair.changePercent.toFixed(2)}%
+              <>
+                {marketStatus && !marketStatus.isOpen && (
+                  <View className="items-center border-b border-[#1C1C2E] py-4 px-4">
+                    <Ionicons name="time-outline" size={20} color="#F59E0B" />
+                    <Text className="mt-2 text-[13px] font-medium text-[#F59E0B]">
+                      {marketStatus.message}
                     </Text>
-                    <Ionicons name="chevron-forward" size={16} color="#64646E" />
                   </View>
-                </Pressable>
-              ))
+                )}
+                {filteredPairs.map((pair) => {
+                  const pairAssetType = getAssetType(pair)
+                  const pairBlocked = pairAssetType === 'forex' && marketStatus && !marketStatus.isOpen
+                  return (
+                    <Pressable
+                      key={pair.symbol}
+                      onPress={() => handleGenerateSignal(pair)}
+                      disabled={generating || !!pairBlocked}
+                      className={`flex-row items-center justify-between border-b border-[#1C1C2E] px-4 py-4 ${pairBlocked ? 'opacity-40' : ''}`}
+                    >
+                      <View className="flex-row items-center gap-3">
+                        <View className="flex-row">
+                          <Text className="text-lg">{pair.flag1}</Text>
+                          <Text className="text-lg -ml-1">{pair.flag2}</Text>
+                        </View>
+                        <View>
+                          <Text className="text-[15px] font-semibold text-white">
+                            {pair.symbol}
+                          </Text>
+                          <Text className="text-[12px] text-[#64646E]">
+                            {pairBlocked ? 'Market closed' : formatPrice(pair.price)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View className="flex-row items-center gap-3">
+                        {!pairBlocked ? (
+                          <Text
+                            className={`text-[13px] font-medium ${
+                              pair.changePercent >= 0 ? 'text-[#22C55E]' : 'text-[#EF4444]'
+                            }`}
+                          >
+                            {pair.changePercent >= 0 ? '+' : ''}{pair.changePercent.toFixed(2)}%
+                          </Text>
+                        ) : (
+                          <Ionicons name="lock-closed" size={14} color="#F59E0B" />
+                        )}
+                        <Ionicons name="chevron-forward" size={16} color="#64646E" />
+                      </View>
+                    </Pressable>
+                  )
+                })}
+              </>
             )}
           </View>
         </View>
@@ -359,7 +462,7 @@ export default function GenerateScreen() {
                   </Text>
                 </View>
               </View>
-            ) : signalResult ? (
+            ) : multiTimeframeResult ? (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View className="mb-4 flex-row items-center justify-between">
                   <View className="flex-row items-center gap-2">
@@ -367,12 +470,12 @@ export default function GenerateScreen() {
                       {selectedPair?.symbol}
                     </Text>
                     <View className={`rounded-md px-2 py-0.5 ${
-                      signalResult.signal === 'BUY' ? 'bg-[#22C55E]/20' : 'bg-[#EF4444]/20'
+                      multiTimeframeResult.overallSignal === 'BUY' ? 'bg-[#22C55E]/20' : multiTimeframeResult.overallSignal === 'SELL' ? 'bg-[#EF4444]/20' : 'bg-[#F59E0B]/20'
                     }`}>
                       <Text className={`text-[12px] font-bold ${
-                        signalResult.signal === 'BUY' ? 'text-[#22C55E]' : 'text-[#EF4444]'
+                        multiTimeframeResult.overallSignal === 'BUY' ? 'text-[#22C55E]' : multiTimeframeResult.overallSignal === 'SELL' ? 'text-[#EF4444]' : 'text-[#F59E0B]'
                       }`}>
-                        {signalResult.signal}
+                        {multiTimeframeResult.overallSignal}
                       </Text>
                     </View>
                   </View>
@@ -382,107 +485,210 @@ export default function GenerateScreen() {
                 </View>
 
                 <View className="mb-4 flex-row items-center gap-2">
-                  <Ionicons name="diamond" size={16} color="#8B5CF6" />
+                  <Ionicons name="layers" size={16} color="#8B5CF6" />
                   <Text className="text-[14px] font-medium text-[#8B5CF6]">
-                    {signalResult.confidence}% Confidence
+                    {multiTimeframeResult.strategyLabel}
                   </Text>
-                  {accountSize ? (
-                    <Text className="text-[11px] text-[#64646E]">
-                      • 2% risk (${(parseFloat(accountSize) * 0.02).toFixed(2)} max)
-                    </Text>
-                  ) : null}
-                </View>
-
-                <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
-                  <View className="flex-row justify-between">
-                    <View>
-                      <Text className="text-[10px] text-[#64646E]">Entry</Text>
-                      <Text className="text-[15px] font-medium text-white">
-                        {formatPrice(signalResult.entry)}
-                      </Text>
-                    </View>
-                    <View className="items-end">
-                      <Text className="text-[10px] text-[#64646E]">Stop Loss</Text>
-                      <Text className="text-[15px] font-medium text-[#EF4444]">
-                        {signalResult.stopLoss ? formatPrice(signalResult.stopLoss) : 'N/A'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View className="mt-3 flex-row justify-between">
-                    <View>
-                      <Text className="text-[10px] text-[#64646E]">Take Profit</Text>
-                      <Text className="text-[15px] font-medium text-[#22C55E]">
-                        {signalResult.takeProfit ? formatPrice(signalResult.takeProfit) : 'N/A'}
-                      </Text>
-                    </View>
-                    <View className="items-end">
-                      <Text className="text-[10px] text-[#64646E]">Risk/Reward</Text>
-                      <Text className="text-[15px] font-medium text-white">
-                        {signalResult.riskReward ? `1:${signalResult.riskReward.toFixed(2)}` : 'N/A'}
-                      </Text>
-                    </View>
-                  </View>
+                  <Text className="text-[11px] text-[#64646E]">
+                    • {multiTimeframeResult.technicalStrength} Strength
+                  </Text>
                 </View>
 
                 <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
                   <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
-                    INDICATORS
+                    TIMEFRAME ANALYSIS
+                  </Text>
+                  {multiTimeframeResult.timeframeAnalyses.map((tf, i) => (
+                    <View key={i} className="mt-2 flex-row items-center justify-between">
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-[13px] font-medium text-white w-[40px]">
+                          {tf.label}
+                        </Text>
+                        <Text className="text-[11px] text-[#64646E] w-[100px]">
+                          {tf.role}
+                        </Text>
+                      </View>
+                      <View className="flex-row items-center gap-2">
+                        <Text className={`text-[12px] font-medium ${
+                          tf.status === 'unavailable' ? 'text-[#64646E]' :
+                          tf.signal === 'BUY' ? 'text-[#22C55E]' :
+                          tf.signal === 'SELL' ? 'text-[#EF4444]' : 'text-[#F59E0B]'
+                        }`}>
+                          {tf.status === 'unavailable' ? 'N/A' : tf.signal}
+                        </Text>
+                        <Text className="text-[11px] text-[#64646E] w-[30px] text-right">
+                          {tf.status === 'unavailable' ? '—' : `${tf.candleCount}`}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+
+                <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
+                  <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
+                    MARKET CONTEXT
                   </Text>
                   <View className="flex-row justify-between">
-                    <Text className="text-[13px] text-[#64646E]">RSI(14)</Text>
-                    <Text className="text-[13px] text-white">
-                      {signalResult.rsi?.toFixed(1) ?? 'N/A'}
-                    </Text>
-                  </View>
-                  <View className="mt-2 flex-row justify-between">
-                    <Text className="text-[13px] text-[#64646E]">EMA20</Text>
-                    <Text className="text-[13px] text-white">
-                      {signalResult.ema20 ? formatPrice(signalResult.ema20) : 'N/A'}
-                    </Text>
-                  </View>
-                  <View className="mt-2 flex-row justify-between">
-                    <Text className="text-[13px] text-[#64646E]">EMA50</Text>
-                    <Text className="text-[13px] text-white">
-                      {signalResult.ema50 ? formatPrice(signalResult.ema50) : 'N/A'}
-                    </Text>
-                  </View>
-                  <View className="mt-2 flex-row justify-between">
-                    <Text className="text-[13px] text-[#64646E]">ATR</Text>
-                    <Text className="text-[13px] text-white">
-                      {signalResult.atr?.toFixed(4) ?? 'N/A'}
-                    </Text>
+                    <View className="items-center">
+                      <Text className="text-[10px] text-[#64646E]">Trend</Text>
+                      <Text className={`text-[13px] font-medium ${
+                        multiTimeframeResult.marketContext.trend === 'bullish' ? 'text-[#22C55E]' :
+                        multiTimeframeResult.marketContext.trend === 'bearish' ? 'text-[#EF4444]' : 'text-[#F59E0B]'
+                      }`}>
+                        {multiTimeframeResult.marketContext.trend.charAt(0).toUpperCase() + multiTimeframeResult.marketContext.trend.slice(1)}
+                      </Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-[10px] text-[#64646E]">Momentum</Text>
+                      <Text className={`text-[13px] font-medium ${
+                        multiTimeframeResult.marketContext.momentum === 'positive' ? 'text-[#22C55E]' :
+                        multiTimeframeResult.marketContext.momentum === 'negative' ? 'text-[#EF4444]' : 'text-[#F59E0B]'
+                      }`}>
+                        {multiTimeframeResult.marketContext.momentum.charAt(0).toUpperCase() + multiTimeframeResult.marketContext.momentum.slice(1)}
+                      </Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-[10px] text-[#64646E]">Structure</Text>
+                      <Text className={`text-[13px] font-medium ${
+                        multiTimeframeResult.marketContext.structure === 'bullish' ? 'text-[#22C55E]' :
+                        multiTimeframeResult.marketContext.structure === 'bearish' ? 'text-[#EF4444]' : 'text-[#F59E0B]'
+                      }`}>
+                        {multiTimeframeResult.marketContext.structure.charAt(0).toUpperCase() + multiTimeframeResult.marketContext.structure.slice(1)}
+                      </Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-[10px] text-[#64646E]">Volatility</Text>
+                      <Text className={`text-[13px] font-medium ${
+                        multiTimeframeResult.marketContext.volatility === 'low' ? 'text-[#22C55E]' :
+                        multiTimeframeResult.marketContext.volatility === 'high' ? 'text-[#EF4444]' : 'text-[#F59E0B]'
+                      }`}>
+                        {multiTimeframeResult.marketContext.volatility.charAt(0).toUpperCase() + multiTimeframeResult.marketContext.volatility.slice(1)}
+                      </Text>
+                    </View>
                   </View>
                 </View>
+
+                {multiTimeframeResult.contextAssessment && (
+                  <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
+                    <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
+                      CONTEXT ASSESSMENT
+                    </Text>
+                    <View className="flex-row justify-between">
+                      <View>
+                        <Text className="text-[10px] text-[#64646E]">Alignment</Text>
+                        <Text className={`text-[13px] font-medium ${
+                          multiTimeframeResult.contextAssessment.alignment === 'supportive' ? 'text-[#22C55E]' :
+                          multiTimeframeResult.contextAssessment.alignment === 'conflicting' ? 'text-[#EF4444]' : 'text-[#F59E0B]'
+                        }`}>
+                          {multiTimeframeResult.contextAssessment.alignment.charAt(0).toUpperCase() + multiTimeframeResult.contextAssessment.alignment.slice(1)}
+                        </Text>
+                      </View>
+                      <View className="items-center">
+                        <Text className="text-[10px] text-[#64646E]">Regime</Text>
+                        <Text className="text-[13px] font-medium text-white">
+                          {multiTimeframeResult.timeframeAnalyses[0]?.context.regime.regime ?? 'N/A'}
+                        </Text>
+                      </View>
+                      <View className="items-center">
+                        <Text className="text-[10px] text-[#64646E]">Volatility</Text>
+                        <Text className="text-[13px] font-medium text-white">
+                          {multiTimeframeResult.timeframeAnalyses[0]?.context.volatility.regime ?? 'N/A'}
+                        </Text>
+                      </View>
+                      <View className="items-end">
+                        <Text className="text-[10px] text-[#64646E]">Price</Text>
+                        <Text className="text-[13px] font-medium text-white">
+                          {multiTimeframeResult.timeframeAnalyses[0]?.context.levels.priceLocation?.replace(/_/g, ' ') ?? 'N/A'}
+                        </Text>
+                      </View>
+                    </View>
+                    {multiTimeframeResult.contextAssessment.warnings.length > 0 && (
+                      <View className="mt-3 border-t border-[#1C1C2E] pt-3">
+                        {multiTimeframeResult.contextAssessment.warnings.map((w, i) => (
+                          <View key={i} className="mt-1 flex-row items-start gap-2">
+                            <Ionicons name="warning" size={12} color="#F59E0B" />
+                            <Text className="flex-1 text-[11px] text-[#F59E0B]">{w}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {signalResult && (
+                  <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
+                    <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
+                      TRADE LEVELS
+                    </Text>
+                    <View className="flex-row justify-between">
+                      <View>
+                        <Text className="text-[10px] text-[#64646E]">Entry</Text>
+                        <Pressable onPress={() => handleCopyValue(formatPrice(signalResult.entry))} className="flex-row items-center gap-1.5">
+                          <Text className="text-[15px] font-medium text-white">
+                            {formatPrice(signalResult.entry)}
+                          </Text>
+                          <Ionicons name="copy-outline" size={12} color="#64646E" />
+                        </Pressable>
+                      </View>
+                      <View className="items-end">
+                        <Text className="text-[10px] text-[#64646E]">Stop Loss</Text>
+                        <Pressable onPress={() => signalResult.stopLoss && handleCopyValue(formatPrice(signalResult.stopLoss))} className="flex-row items-center gap-1.5">
+                          <Text className="text-[15px] font-medium text-[#EF4444]">
+                            {signalResult.stopLoss ? formatPrice(signalResult.stopLoss) : 'N/A'}
+                          </Text>
+                          {signalResult.stopLoss && <Ionicons name="copy-outline" size={12} color="#64646E" />}
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <View className="mt-3 flex-row justify-between">
+                      <View>
+                        <Text className="text-[10px] text-[#64646E]">Take Profit</Text>
+                        <Pressable onPress={() => signalResult.takeProfit && handleCopyValue(formatPrice(signalResult.takeProfit))} className="flex-row items-center gap-1.5">
+                          <Text className="text-[15px] font-medium text-[#22C55E]">
+                            {signalResult.takeProfit ? formatPrice(signalResult.takeProfit) : 'N/A'}
+                          </Text>
+                          {signalResult.takeProfit && <Ionicons name="copy-outline" size={12} color="#64646E" />}
+                        </Pressable>
+                      </View>
+                      <View className="items-end">
+                        <Text className="text-[10px] text-[#64646E]">Risk/Reward</Text>
+                        <Text className="text-[15px] font-medium text-white">
+                          {signalResult.riskReward ? `1:${signalResult.riskReward.toFixed(2)}` : 'N/A'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {accountSize && signalResult.stopLoss ? (
+                      <View className="mt-3 border-t border-[#1C1C2E] pt-3">
+                        <View className="flex-row justify-between">
+                          <Text className="text-[11px] text-[#64646E]">Suggested Lot Size</Text>
+                          <Text className="text-[11px] font-medium text-[#8B5CF6]">
+                            {(() => {
+                              const acc = parseFloat(accountSize)
+                              const sl = Math.abs(signalResult.entry - signalResult.stopLoss)
+                              const slPips = sl / 0.0001
+                              const maxRisk = acc * 0.02
+                              const lotSize = slPips > 0 ? maxRisk / (slPips * 10) : 0.01
+                              return Math.max(0.01, Math.min(lotSize, 1)).toFixed(2)
+                            })()}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
 
                 <View className="mb-6 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
                   <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
-                    REASONS
+                    ANALYSIS
                   </Text>
-                  {signalResult.reasons.slice(0, 5).map((reason, i) => (
+                  {multiTimeframeResult.reasoning.slice(0, 5).map((reason, i) => (
                     <View key={i} className="mt-1 flex-row items-start gap-2">
                       <Ionicons name="checkmark-circle" size={14} color="#22C55E" />
                       <Text className="flex-1 text-[12px] text-white">{reason}</Text>
                     </View>
                   ))}
-
-                  {accountSize && signalResult.stopLoss ? (
-                    <View className="mt-3 border-t border-[#1C1C2E] pt-3">
-                      <View className="flex-row justify-between">
-                        <Text className="text-[11px] text-[#64646E]">Suggested Lot Size</Text>
-                        <Text className="text-[11px] font-medium text-[#8B5CF6]">
-                          {(() => {
-                            const acc = parseFloat(accountSize)
-                            const sl = Math.abs(signalResult.entry - signalResult.stopLoss)
-                            const slPips = sl / 0.0001
-                            const maxRisk = acc * 0.02
-                            const lotSize = slPips > 0 ? maxRisk / (slPips * 10) : 0.01
-                            return Math.max(0.01, Math.min(lotSize, 1)).toFixed(2)
-                          })()}
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
                 </View>
 
                 <Pressable

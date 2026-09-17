@@ -1,4 +1,4 @@
-import { View, Text, Pressable } from 'react-native'
+import { View, Text, Pressable, TouchableOpacity } from 'react-native'
 import React from 'react'
 import { MaterialCommunityIcons } from '@expo/vector-icons'
 
@@ -38,7 +38,7 @@ export default function FirstOnboarding() {
         <View className="w-full items-center">
           <OnboardingDots active={1} />
 
-          <Pressable
+          <TouchableOpacity
             className="mt-6 h-14 w-full overflow-hidden rounded-xl bg-[#6237D8] justify-center"
             onPress={() => router.push('/(onboarding)/second')}
           >
@@ -47,13 +47,13 @@ export default function FirstOnboarding() {
               Continue
             </Text>
 
-          </Pressable>
+          </TouchableOpacity>
 
-          <Pressable onPress={() => router.replace('/(auth)/signUp')}>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/signUp')}>
             <Text className="mt-5 text-[13px] text-[#55555E]">
               Skip
             </Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
       </View>
     </View>

@@ -3,9 +3,9 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
-import { getCurrencyPairs } from '../../lib/services/dataService'
+import { getCurrencyPairs, formatPrice } from '../../lib/services/dataService'
+import { getAssetType, getMarketStatus, MarketStatus } from '../../lib/services/marketStatus'
 import { CurrencyPair } from '../../types'
-import MarketCard from '../../component/MarketCard'
 
 const CATEGORIES = ['All', 'Major', 'Minor', 'Exotic', 'Crypto', 'Commodities']
 const REFRESH_INTERVAL = 60000
@@ -19,14 +19,23 @@ export default function MarketsScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const loadedRef = useRef(false)
+  const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null)
+  const statusIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     loadAllPairs()
     intervalRef.current = setInterval(() => loadAllPairs(true), REFRESH_INTERVAL)
+    statusIntervalRef.current = setInterval(updateMarketStatus, 60000)
+    updateMarketStatus()
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
+      if (statusIntervalRef.current) clearInterval(statusIntervalRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    updateMarketStatus()
+  }, [selectedCategory])
 
   useEffect(() => {
     filterPairs()
@@ -61,6 +70,17 @@ export default function MarketsScreen() {
       )
     }
     setFilteredPairs(result)
+  }
+
+  function updateMarketStatus() {
+    const isForexView = !selectedCategory || selectedCategory === 'All' || selectedCategory === 'Major' || selectedCategory === 'Minor' || selectedCategory === 'Exotic'
+    if (isForexView) {
+      setMarketStatus(getMarketStatus('forex'))
+    } else if (selectedCategory === 'Crypto') {
+      setMarketStatus(getMarketStatus('crypto'))
+    } else {
+      setMarketStatus(null)
+    }
   }
 
   const onRefresh = useCallback(() => {
@@ -151,13 +171,59 @@ export default function MarketsScreen() {
           </View>
 
           <View className="rounded-2xl border border-[#1C1C2E] bg-[#0D0D14]">
-            {filteredPairs.map((pair) => (
-              <MarketCard
-                key={pair.symbol}
-                pair={pair}
-                onPress={() => router.push(`/pair/${pair.symbol.replace('/', '_')}`)}
-              />
-            ))}
+            {marketStatus && !marketStatus.isOpen && (
+              <View className="items-center border-b border-[#1C1C2E] py-4 px-4">
+                <Ionicons name="time-outline" size={20} color="#F59E0B" />
+                <Text className="mt-2 text-[13px] font-medium text-[#F59E0B]">
+                  {marketStatus.message}
+                </Text>
+              </View>
+            )}
+            {filteredPairs.map((pair) => {
+              const pairAssetType = getAssetType(pair)
+              const pairClosed = pairAssetType === 'forex' && marketStatus && !marketStatus.isOpen
+              const isPositive = pair.changePercent >= 0
+              return (
+                <Pressable
+                  key={pair.symbol}
+                  onPress={() => router.push(`/pair/${pair.symbol.replace('/', '_')}`)}
+                  disabled={!!pairClosed}
+                  className={`flex-row items-center justify-between border-b border-[#1C1C2E] px-5 py-4 ${pairClosed ? 'opacity-40' : ''}`}
+                >
+                  <View className="flex-row items-center gap-3">
+                    <View className="flex-row">
+                      <Text className="text-lg">{pair.flag1}</Text>
+                      <Text className="text-lg -ml-1">{pair.flag2}</Text>
+                    </View>
+                    <View>
+                      <Text className="text-[15px] font-semibold text-white">
+                        {pair.symbol}
+                      </Text>
+                      <Text className="text-[12px] text-[#64646E]">
+                        {pairClosed ? 'Market closed' : pair.name}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View className="flex-row items-center gap-4">
+                    {!pairClosed ? (
+                      <>
+                        <Text className="text-[15px] font-medium text-white">
+                          {formatPrice(pair.price)}
+                        </Text>
+                        <View className={`rounded-lg px-2.5 py-1 ${isPositive ? 'bg-[#22C55E]/15' : 'bg-[#EF4444]/15'}`}>
+                          <Text className={`text-[12px] font-bold ${isPositive ? 'text-[#22C55E]' : 'text-[#EF4444]'}`}>
+                            {isPositive ? '+' : ''}{pair.changePercent.toFixed(2)}%
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      <Ionicons name="lock-closed" size={14} color="#F59E0B" />
+                    )}
+                  </View>
+                </Pressable>
+              )
+            })}
             {filteredPairs.length === 0 && (
               <View className="items-center py-10">
                 <Ionicons name="search-outline" size={32} color="#64646E" />

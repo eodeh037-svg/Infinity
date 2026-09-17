@@ -35,6 +35,7 @@ export type Trade = {
 
 export type UserProfile = {
   id: string
+  userId: string
   userName: string
   email: string
   plan: 'free' | 'premium'

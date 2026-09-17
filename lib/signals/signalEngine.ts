@@ -1,3 +1,4 @@
+export { Candle } from '../indicators/types'
 import { Candle } from '../indicators/types'
 import { calculateEMA } from '../indicators/ema'
 import { calculateRSI } from '../indicators/rsi'
@@ -8,6 +9,20 @@ import { calculateBollinger, detectBollingerSqueeze } from '../indicators/bollin
 import { calculateStochastic } from '../indicators/stochastic'
 import { calculateIchimoku, getCloudAtCandle } from '../indicators/ichimoku'
 import { calculateWilliamsR, WilliamsRResult } from '../indicators/williamsR'
+import { calculateOBV, analyzeOBV } from '../indicators/obv'
+import { calculateVWAP, analyzeVWAP } from '../indicators/vwap'
+import { calculateFearGreed, analyzeSentimentImpact, SentimentScore } from '../indicators/fearGreed'
+import { calculateSupertrend } from '../indicators/supertrend'
+import { calculateFundingRate, analyzeFundingSignal } from '../indicators/fundingRate'
+import { calculateMVRV } from '../indicators/mvrv'
+import { calculateFisherTransform, analyzeFisher } from '../indicators/fisherTransform'
+import { calculateCMO, analyzeCMO } from '../indicators/cmo'
+import { calculateKeltner, analyzeKeltner } from '../indicators/keltner'
+import { calculateParabolicSAR, analyzeSAR } from '../indicators/parabolicSAR'
+import { calculateStochasticRSI, analyzeStochasticRSI } from '../indicators/stochasticRSI'
+import { calculateATRPercentile, analyzeATRPercentileSignal } from '../indicators/atrPercentile'
+
+export const SIGNAL_ENGINE_VERSION = 'v2'
 
 export type Signal = 'BUY' | 'SELL' | 'HOLD'
 
@@ -31,10 +46,32 @@ export type SignalResult = {
   minusDI: number | null
   stochK: number | null
   stochD: number | null
-  bbUpper: number | null
+   bbUpper: number | null
   bbLower: number | null
   bbWidth: number | null
   ichimokuCloud: boolean | null
+  obvRising: boolean | null
+  obvDivergence: 'BULLISH' | 'BEARISH' | 'NONE' | null
+  aboveVWAP: boolean | null
+  sentimentLabel: string | null
+  fearGreedIndex: number | null
+  supertrendValue: number | null
+  supertrendDirection: 'UP' | 'DOWN' | null
+  fundingBias: 'bullish' | 'bearish' | 'neutral' | null
+  fundingIntensity: number | null
+  mvrvSignal: 'BUY' | 'SELL' | 'HOLD' | null
+  mvrvValuation: string | null
+  fisherSignal: 'BUY' | 'SELL' | 'NONE' | null
+  fisherStrength: number | null
+  cmoSignal: 'BUY' | 'SELL' | 'NONE' | null
+  cmoStrength: number | null
+  keltnerSqueeze: boolean | null
+  sarSignal: 'BUY' | 'SELL' | 'NONE' | null
+  stochRSISignal: 'BUY' | 'SELL' | 'NONE' | null
+  stochRSIOverbought: boolean | null
+  stochRSIOversold: boolean | null
+  atrPercentile: number | null
+  atrRegime: 'low' | 'medium' | 'high' | null
   confidence: number
   reasons: string[]
   output: string
@@ -53,19 +90,45 @@ const VOLATILITY_RR_ADJUSTMENT = 0.5
 const TREND_RR_BONUS = 0.3
 const CONFIDENCE_RR_SCALING = 0.4
 
-const HOLD_SCORE_GAP = 3
-const MIN_DIRECTIONAL_SCORE = 10
+const HOLD_SCORE_GAP = 2
+const MIN_DIRECTIONAL_SCORE = 6
 
 const MAX_CONFIDENCE = 95
 const MIN_CONFIDENCE = 35
 
+export type EvidenceFamily =
+  | 'trend'
+  | 'momentum'
+  | 'meanReversion'
+  | 'volume'
+  | 'sentiment'
+  | 'volatility'
+  | 'priceAction'
+
+export const DEFAULT_FAMILY_CAPS: Record<EvidenceFamily, number> = {
+  trend: 8,
+  momentum: 7,
+  meanReversion: 8,
+  volume: 4,
+  sentiment: 5,
+  volatility: 4,
+  priceAction: 6,
+}
+
+export type SignalOptions = {
+  familyCaps?: Partial<Record<EvidenceFamily, number>>
+  holdScoreGap?: number
+  minDirectionalScore?: number
+}
+
 export function generateSignal(
   candles: Candle[],
-  accountSize: number = 0
+  accountSize: number = 0,
+  options: SignalOptions = {}
 ): SignalResult {
   const entry = candles[candles.length - 1]?.close ?? 0
 
-  const emptyIndicators = {
+   const emptyIndicators = {
     ema20: null,
     ema50: null,
     rsi: null,
@@ -80,6 +143,28 @@ export function generateSignal(
     bbLower: null,
     bbWidth: null,
     ichimokuCloud: null,
+    obvRising: null,
+    obvDivergence: null,
+    aboveVWAP: null,
+    sentimentLabel: null,
+    fearGreedIndex: null,
+    supertrendValue: null,
+    supertrendDirection: null,
+    fundingBias: null,
+    fundingIntensity: null,
+    mvrvSignal: null,
+    mvrvValuation: null,
+    fisherSignal: null,
+    fisherStrength: null,
+    cmoSignal: null,
+    cmoStrength: null,
+    keltnerSqueeze: null,
+    sarSignal: null,
+    stochRSISignal: null,
+    stochRSIOverbought: null,
+    stochRSIOversold: null,
+    atrPercentile: null,
+    atrRegime: null,
   }
 
   if (!entry || candles.length < MIN_CANDLES) {
@@ -102,21 +187,55 @@ export function generateSignal(
   const bollingerResults = calculateBollinger(closes, 20, 2)
   const stochasticResults = calculateStochastic(candles, 14, 3, 3)
   const ichimokuResults = calculateIchimoku(candles)
-  const williamsRValues = calculateWilliamsR(candles, 14)
+   const williamsRValues = calculateWilliamsR(candles, 14)
 
-  const lastIndex = candles.length - 1
+   const lastIndex = candles.length - 1
+   const volumes = candles.map(c => c.volume ?? 0)
+   const obvValues = calculateOBV(closes, volumes)
+   const obvAnalysis = analyzeOBV(obvValues, closes, lastIndex)
+   const vwapValues = calculateVWAP(candles, 20)
+   const vwapAnalysis = analyzeVWAP(vwapValues, entry, lastIndex)
+   const sentimentScore = calculateFearGreed(closes, volumes, rsiValues, atrValues, lastIndex)
+   const sentimentImpact = analyzeSentimentImpact(sentimentScore)
 
-  const ema20 = ema20Values[lastIndex] ?? null
-  const ema50 = ema50Values[lastIndex] ?? null
-  const ema200 = ema200Values[lastIndex] ?? null
-  const rsi = rsiValues[lastIndex] ?? null
-  const macd = macdValues[lastIndex] ?? { macd: null, signal: null, histogram: null }
-  const atr = atrValues[lastIndex] ?? null
-  const adxResult = adxResults[lastIndex] ?? { adx: null, plusDI: null, minusDI: null }
-  const bb = bollingerResults[lastIndex] ?? { upper: null, middle: null, lower: null, width: null }
-  const stoch = stochasticResults[lastIndex] ?? { k: null, d: null }
-  const ichimoku = ichimokuResults[lastIndex] ?? { tenkan: null, kijun: null, senkouA: null, senkouB: null, chikou: null }
-  const williamsR = williamsRValues[lastIndex] ?? { value: null }
+   const supertrendData = calculateSupertrend(candles)
+   const supertrendLast = supertrendData[lastIndex] ?? { supertrend: null, direction: 'DOWN' }
+
+   const fundingData = calculateFundingRate(candles)
+
+   const mvrvData = calculateMVRV(candles)
+
+   const fisherValues = calculateFisherTransform(closes)
+   const fisherAnalysis = analyzeFisher(fisherValues, lastIndex)
+
+   const cmoValues = calculateCMO(closes)
+   const cmoAnalysis = analyzeCMO(cmoValues, lastIndex)
+
+   const keltnerResults = calculateKeltner(candles)
+   const keltnerAnalysis = analyzeKeltner(keltnerResults, entry, lastIndex)
+
+   const sarValues = calculateParabolicSAR(candles)
+   const sarAnalysis = analyzeSAR(sarValues, closes, lastIndex)
+
+   const stochRSIValues = calculateStochasticRSI(closes)
+   const stochRSIAnalysis = analyzeStochasticRSI(stochRSIValues, lastIndex)
+
+   const atrPercentileData = calculateATRPercentile(candles)
+   const atrPercentileScore = analyzeATRPercentileSignal(
+     atrPercentileData.percentile, atrPercentileData.regime
+   )
+
+   const ema20 = ema20Values[lastIndex] ?? null
+   const ema50 = ema50Values[lastIndex] ?? null
+   const ema200 = ema200Values[lastIndex] ?? null
+   const rsi = rsiValues[lastIndex] ?? null
+   const macd = macdValues[lastIndex] ?? { macd: null, signal: null, histogram: null }
+   const atr = atrValues[lastIndex] ?? null
+   const adxResult = adxResults[lastIndex] ?? { adx: null, plusDI: null, minusDI: null }
+   const bb = bollingerResults[lastIndex] ?? { upper: null, middle: null, lower: null, width: null }
+   const stoch = stochasticResults[lastIndex] ?? { k: null, d: null }
+   const ichimoku = ichimokuResults[lastIndex] ?? { tenkan: null, kijun: null, senkouA: null, senkouB: null, chikou: null }
+   const williamsR = williamsRValues[lastIndex] ?? { value: null }
 
   const cloudData = getCloudAtCandle(ichimokuResults, lastIndex, 26)
   const priceAboveCloud = cloudData.senkouA !== null && cloudData.senkouB !== null && entry > Math.max(cloudData.senkouA, cloudData.senkouB)
@@ -126,17 +245,39 @@ export function generateSignal(
     ema20 === null || ema50 === null || rsi === null || atr === null || atr <= 0 ||
     macd.macd === null || macd.signal === null || macd.histogram === null
   ) {
-    return createResult(
-      'HOLD', entry, null, null, null,
-      {
-        ema20, ema50, rsi, macd, atr,
-        adx: adxResult.adx, plusDI: adxResult.plusDI, minusDI: adxResult.minusDI,
-        stochK: stoch.k, stochD: stoch.d,
-        bbUpper: bb.upper, bbLower: bb.lower, bbWidth: bb.width,
-        ichimokuCloud: priceAboveCloud || priceBelowCloud ? true : null,
-      },
-      0, ['Indicators could not be fully calculated']
-    )
+      return createResult(
+        'HOLD', entry, null, null, null,
+        {
+          ema20, ema50, rsi, macd, atr,
+          adx: adxResult.adx, plusDI: adxResult.plusDI, minusDI: adxResult.minusDI,
+          stochK: stoch.k, stochD: stoch.d,
+          bbUpper: bb.upper, bbLower: bb.lower, bbWidth: bb.width,
+          ichimokuCloud: priceAboveCloud || priceBelowCloud ? true : null,
+          obvRising: obvAnalysis.obvRising,
+          obvDivergence: obvAnalysis.obvDivergence,
+          aboveVWAP: vwapAnalysis.aboveVWAP,
+          sentimentLabel: sentimentScore.sentiment,
+          fearGreedIndex: sentimentScore.fearGreedIndex,
+          supertrendValue: supertrendLast.supertrend,
+          supertrendDirection: supertrendLast.direction,
+          fundingBias: fundingData.bias,
+          fundingIntensity: fundingData.intensity,
+          mvrvSignal: mvrvData.signal,
+          mvrvValuation: mvrvData.valuation,
+          fisherSignal: fisherAnalysis.signal,
+          fisherStrength: fisherAnalysis.strength,
+          cmoSignal: cmoAnalysis.signal,
+          cmoStrength: cmoAnalysis.strength,
+          keltnerSqueeze: keltnerAnalysis.squeeze,
+          sarSignal: sarAnalysis.signal,
+          stochRSISignal: stochRSIAnalysis.signal,
+          stochRSIOverbought: stochRSIAnalysis.overbought,
+          stochRSIOversold: stochRSIAnalysis.oversold,
+          atrPercentile: atrPercentileData.percentile,
+          atrRegime: atrPercentileData.regime,
+        },
+        0, ['Insufficient market data for reliable analysis']
+      )
   }
 
   let buyScore = 0
@@ -144,8 +285,53 @@ export function generateSignal(
   const buyReasons: string[] = []
   const sellReasons: string[] = []
 
-  const addBuy = (score: number, reason: string) => { buyScore += score; buyReasons.push(reason) }
-  const addSell = (score: number, reason: string) => { sellScore += score; sellReasons.push(reason) }
+  const familyCaps: Record<EvidenceFamily, number> = {
+    ...DEFAULT_FAMILY_CAPS,
+    ...(options.familyCaps ?? {}),
+  }
+  const familyContrib: Record<EvidenceFamily, { buy: number; sell: number }> = {
+    trend: { buy: 0, sell: 0 },
+    momentum: { buy: 0, sell: 0 },
+    meanReversion: { buy: 0, sell: 0 },
+    volume: { buy: 0, sell: 0 },
+    sentiment: { buy: 0, sell: 0 },
+    volatility: { buy: 0, sell: 0 },
+    priceAction: { buy: 0, sell: 0 },
+  }
+
+  const addBuy = (score: number, reason: string, family: EvidenceFamily) => {
+    const cap = familyCaps[family]
+    const used = familyContrib[family].buy
+    if (used + score > cap) {
+      const remaining = cap - used
+      if (remaining > 0) {
+        buyScore += remaining
+        buyReasons.push(reason)
+      }
+      familyContrib[family].buy = cap
+      return
+    }
+    buyScore += score
+    buyReasons.push(reason)
+    familyContrib[family].buy += score
+  }
+
+  const addSell = (score: number, reason: string, family: EvidenceFamily) => {
+    const cap = familyCaps[family]
+    const used = familyContrib[family].sell
+    if (used + score > cap) {
+      const remaining = cap - used
+      if (remaining > 0) {
+        sellScore += remaining
+        sellReasons.push(reason)
+      }
+      familyContrib[family].sell = cap
+      return
+    }
+    sellScore += score
+    sellReasons.push(reason)
+    familyContrib[family].sell += score
+  }
 
   const adxValue = adxResult.adx ?? 0
   const isTrending = adxValue >= 22
@@ -155,21 +341,21 @@ export function generateSignal(
   if (adxValue > 0) {
     if (isStrongTrend) {
       if (adxResult.plusDI !== null && adxResult.minusDI !== null && adxResult.plusDI > adxResult.minusDI) {
-        addBuy(3, `Strong bullish trend (ADX ${adxValue.toFixed(1)}, +DI ${adxResult.plusDI.toFixed(1)} > -DI ${adxResult.minusDI.toFixed(1)})`)
+        addBuy(3, `Strong bullish trend (ADX ${adxValue.toFixed(1)}, +DI ${adxResult.plusDI.toFixed(1)} > -DI ${adxResult.minusDI.toFixed(1)})`, 'trend')
       } else if (adxResult.plusDI !== null && adxResult.minusDI !== null) {
-        addSell(3, `Strong bearish trend (ADX ${adxValue.toFixed(1)}, -DI ${adxResult.minusDI.toFixed(1)} > +DI ${adxResult.plusDI.toFixed(1)})`)
+        addSell(3, `Strong bearish trend (ADX ${adxValue.toFixed(1)}, -DI ${adxResult.minusDI.toFixed(1)} > +DI ${adxResult.plusDI.toFixed(1)})`, 'trend')
       }
     } else if (isTrending) {
       if (adxResult.plusDI !== null && adxResult.minusDI !== null && adxResult.plusDI > adxResult.minusDI) {
-        addBuy(2, `Trend favors bulls (ADX ${adxValue.toFixed(1)})`)
+        addBuy(2, `Trend favors bulls (ADX ${adxValue.toFixed(1)})`, 'trend')
       } else if (adxResult.plusDI !== null && adxResult.minusDI !== null) {
-        addSell(2, `Trend favors bears (ADX ${adxValue.toFixed(1)})`)
+        addSell(2, `Trend favors bears (ADX ${adxValue.toFixed(1)})`, 'trend')
       }
     } else if (adxValue >= 20) {
       if (adxResult.plusDI !== null && adxResult.minusDI !== null && adxResult.plusDI > adxResult.minusDI) {
-        addBuy(1, `Mild bullish bias (ADX ${adxValue.toFixed(1)})`)
+        addBuy(1, `Mild bullish bias (ADX ${adxValue.toFixed(1)})`, 'trend')
       } else if (adxResult.plusDI !== null && adxResult.minusDI !== null) {
-        addSell(1, `Mild bearish bias (ADX ${adxValue.toFixed(1)})`)
+        addSell(1, `Mild bearish bias (ADX ${adxValue.toFixed(1)})`, 'trend')
       }
     }
   }
@@ -178,35 +364,35 @@ export function generateSignal(
   const ema50Slope = calculateSlope(ema50Values, lastIndex, 5)
 
   if (entry > ema20 && ema20 > ema50) {
-    addBuy(3, 'Price above EMA20 above EMA50 (bullish alignment)')
+    addBuy(3, 'Price above EMA20 above EMA50 (bullish alignment)', 'trend')
   } else if (entry < ema20 && ema20 < ema50) {
-    addSell(3, 'Price below EMA20 below EMA50 (bearish alignment)')
+    addSell(3, 'Price below EMA20 below EMA50 (bearish alignment)', 'trend')
   } else if (entry > ema50) {
-    addBuy(1, 'Price above EMA50')
+    addBuy(1, 'Price above EMA50', 'trend')
   } else {
-    addSell(1, 'Price below EMA50')
+    addSell(1, 'Price below EMA50', 'trend')
   }
 
   if (ema20Slope > 0 && ema50Slope > 0) {
-    addBuy(2, 'Both EMA20 and EMA50 trending upward')
+    addBuy(2, 'Both EMA20 and EMA50 trending upward', 'trend')
   } else if (ema20Slope < 0 && ema50Slope < 0) {
-    addSell(2, 'Both EMA20 and EMA50 trending downward')
+    addSell(2, 'Both EMA20 and EMA50 trending downward', 'trend')
   }
 
   if (ema200 !== null) {
     if (entry > ema200 && ema20 !== null && ema20 > ema200) {
-      addBuy(2, 'Price above EMA200 (long-term bullish)')
+      addBuy(2, 'Price above EMA200 (long-term bullish)', 'trend')
     } else if (entry < ema200 && ema20 !== null && ema20 < ema200) {
-      addSell(2, 'Price below EMA200 (long-term bearish)')
+      addSell(2, 'Price below EMA200 (long-term bearish)', 'trend')
     }
   }
 
   const structure = analyzeMarketStructure(candles, lastIndex)
 
   if (structure === 'BULLISH') {
-    addBuy(3, 'Market structure: higher highs and higher lows')
+    addBuy(3, 'Market structure: higher highs and higher lows', 'trend')
   } else if (structure === 'BEARISH') {
-    addSell(3, 'Market structure: lower highs and lower lows')
+    addSell(3, 'Market structure: lower highs and lower lows', 'trend')
   }
 
   const momentum = analyzeMomentum(rsiValues, macdValues, ema20Values, lastIndex)
@@ -214,23 +400,23 @@ export function generateSignal(
   if (rsi !== null) {
     if (isTrending) {
       if (rsi >= 50 && rsi < 75) {
-        addBuy(2, `RSI confirms bullish momentum (${rsi.toFixed(1)})`)
+        addBuy(2, `RSI confirms bullish momentum (${rsi.toFixed(1)})`, 'momentum')
       } else if (rsi > 25 && rsi <= 50) {
-        addSell(2, `RSI confirms bearish momentum (${rsi.toFixed(1)})`)
+        addSell(2, `RSI confirms bearish momentum (${rsi.toFixed(1)})`, 'momentum')
       } else if (rsi >= 75) {
-        addSell(1, `RSI overbought in trend (${rsi.toFixed(1)}) — potential reversal`)
+        addSell(1, `RSI overbought in trend (${rsi.toFixed(1)}) — potential reversal`, 'momentum')
       } else if (rsi <= 25) {
-        addBuy(1, `RSI oversold in trend (${rsi.toFixed(1)}) — potential reversal`)
+        addBuy(1, `RSI oversold in trend (${rsi.toFixed(1)}) — potential reversal`, 'momentum')
       }
     } else {
       if (rsi <= 30) {
-        addBuy(3, `RSI oversold in range (${rsi.toFixed(1)}) — mean reversion`)
+        addBuy(3, `RSI oversold in range (${rsi.toFixed(1)}) — mean reversion`, 'meanReversion')
       } else if (rsi >= 70) {
-        addSell(3, `RSI overbought in range (${rsi.toFixed(1)}) — mean reversion`)
+        addSell(3, `RSI overbought in range (${rsi.toFixed(1)}) — mean reversion`, 'meanReversion')
       } else if (rsi < 45) {
-        addBuy(1, `RSI leaning bearish zone (${rsi.toFixed(1)})`)
+        addBuy(1, `RSI leaning bearish zone (${rsi.toFixed(1)})`, 'meanReversion')
       } else if (rsi > 55) {
-        addSell(1, `RSI leaning bullish zone (${rsi.toFixed(1)})`)
+        addSell(1, `RSI leaning bullish zone (${rsi.toFixed(1)})`, 'meanReversion')
       }
     }
   }
@@ -238,40 +424,40 @@ export function generateSignal(
   const macdDiff = macd.macd - macd.signal
   const macdThreshold = atr * 0.001
   if (macdDiff > macdThreshold) {
-    addBuy(2, 'MACD above signal line')
+    addBuy(2, 'MACD above signal line', 'momentum')
   } else if (macdDiff < -macdThreshold) {
-    addSell(2, 'MACD below signal line')
+    addSell(2, 'MACD below signal line', 'momentum')
   }
 
   const previousMacd = macdValues[lastIndex - 1]
   if (previousMacd?.macd !== null && previousMacd?.signal !== null) {
     if (previousMacd.macd <= previousMacd.signal && macd.macd > macd.signal) {
-      addBuy(2, 'Fresh bullish MACD crossover')
+      addBuy(2, 'Fresh bullish MACD crossover', 'momentum')
     }
     if (previousMacd.macd >= previousMacd.signal && macd.macd < macd.signal) {
-      addSell(2, 'Fresh bearish MACD crossover')
+      addSell(2, 'Fresh bearish MACD crossover', 'momentum')
     }
   }
 
   if (momentum.histogramGrowing) {
     if (macd.histogram > 0) {
-      addBuy(2, 'Bullish MACD momentum expanding')
+      addBuy(2, 'Bullish MACD momentum expanding', 'momentum')
     } else {
-      addSell(2, 'Bearish MACD momentum expanding')
+      addSell(2, 'Bearish MACD momentum expanding', 'momentum')
     }
   }
 
   const macdDivergence = detectMACDDivergence(candles, macdValues, lastIndex)
   if (macdDivergence === 'BULLISH') {
-    addBuy(2, 'Bullish MACD divergence detected')
+    addBuy(2, 'Bullish MACD divergence detected', 'momentum')
   } else if (macdDivergence === 'BEARISH') {
-    addSell(2, 'Bearish MACD divergence detected')
+    addSell(2, 'Bearish MACD divergence detected', 'momentum')
   }
 
   if (momentum.rsiRising) {
-    addBuy(1, 'RSI momentum rising')
+    addBuy(1, 'RSI momentum rising', 'momentum')
   } else if (momentum.rsiFalling) {
-    addSell(1, 'RSI momentum falling')
+    addSell(1, 'RSI momentum falling', 'momentum')
   }
 
   const hasMomentumConflict =
@@ -279,37 +465,37 @@ export function generateSignal(
     (momentum.rsiFalling && macd.histogram !== null && macd.histogram > 0)
   if (hasMomentumConflict) {
     if (momentum.rsiRising) {
-      addSell(1, 'Momentum conflict: RSI rising but MACD histogram negative')
+      addSell(1, 'Momentum conflict: RSI rising but MACD histogram negative', 'momentum')
     } else {
-      addBuy(1, 'Momentum conflict: RSI falling but MACD histogram positive')
+      addBuy(1, 'Momentum conflict: RSI falling but MACD histogram positive', 'momentum')
     }
   }
 
   const trendStrength = analyzeTrendStrength(ema20, ema50, entry, atr)
   if (trendStrength.strong) {
     if (trendStrength.bullish) {
-      addBuy(1, `Strong EMA trend separation (${trendStrength.gapPercent.toFixed(2)}%)`)
+      addBuy(1, `Strong EMA trend separation (${trendStrength.gapPercent.toFixed(2)}%)`, 'trend')
     } else {
-      addSell(1, `Strong bearish EMA separation (${trendStrength.gapPercent.toFixed(2)}%)`)
+      addSell(1, `Strong bearish EMA separation (${trendStrength.gapPercent.toFixed(2)}%)`, 'trend')
     }
   }
 
   if (stoch.k !== null && stoch.d !== null) {
     if (isRanging) {
       if (stoch.k < 20 && stoch.k > stoch.d) {
-        addBuy(3, `Stochastic oversold crossover (K=${stoch.k.toFixed(1)}, D=${stoch.d.toFixed(1)})`)
+        addBuy(3, `Stochastic oversold crossover (K=${stoch.k.toFixed(1)}, D=${stoch.d.toFixed(1)})`, 'meanReversion')
       } else if (stoch.k > 80 && stoch.k < stoch.d) {
-        addSell(3, `Stochastic overbought crossover (K=${stoch.k.toFixed(1)}, D=${stoch.d.toFixed(1)})`)
+        addSell(3, `Stochastic overbought crossover (K=${stoch.k.toFixed(1)}, D=${stoch.d.toFixed(1)})`, 'meanReversion')
       } else if (stoch.k < 30) {
-        addBuy(1, `Stochastic near oversold (${stoch.k.toFixed(1)})`)
+        addBuy(1, `Stochastic near oversold (${stoch.k.toFixed(1)})`, 'meanReversion')
       } else if (stoch.k > 70) {
-        addSell(1, `Stochastic near overbought (${stoch.k.toFixed(1)})`)
+        addSell(1, `Stochastic near overbought (${stoch.k.toFixed(1)})`, 'meanReversion')
       }
     } else {
       if (stoch.k > 50 && stoch.k > stoch.d) {
-        addBuy(1, `Stochastic bullish in trend (K=${stoch.k.toFixed(1)})`)
+        addBuy(1, `Stochastic bullish in trend (K=${stoch.k.toFixed(1)})`, 'momentum')
       } else if (stoch.k < 50 && stoch.k < stoch.d) {
-        addSell(1, `Stochastic bearish in trend (K=${stoch.k.toFixed(1)})`)
+        addSell(1, `Stochastic bearish in trend (K=${stoch.k.toFixed(1)})`, 'momentum')
       }
     }
   }
@@ -317,19 +503,19 @@ export function generateSignal(
   if (bb.upper !== null && bb.lower !== null && bb.middle !== null) {
     if (isRanging) {
       if (entry <= bb.lower) {
-        addBuy(3, 'Price at lower Bollinger Band — mean reversion')
+        addBuy(3, 'Price at lower Bollinger Band — mean reversion', 'meanReversion')
       } else if (entry >= bb.upper) {
-        addSell(3, 'Price at upper Bollinger Band — mean reversion')
+        addSell(3, 'Price at upper Bollinger Band — mean reversion', 'meanReversion')
       } else if (entry < bb.middle) {
-        addBuy(1, 'Price below Bollinger midline')
+        addBuy(1, 'Price below Bollinger midline', 'meanReversion')
       } else {
-        addSell(1, 'Price above Bollinger midline')
+        addSell(1, 'Price above Bollinger midline', 'meanReversion')
       }
     } else if (isTrending) {
       if (entry > bb.upper) {
-        addBuy(2, 'Price riding upper band — strong bullish trend')
+        addBuy(2, 'Price riding upper band — strong bullish trend', 'momentum')
       } else if (entry < bb.lower) {
-        addSell(2, 'Price riding lower band — strong bearish trend')
+        addSell(2, 'Price riding lower band — strong bearish trend', 'momentum')
       }
     }
   }
@@ -337,25 +523,25 @@ export function generateSignal(
   const bbSqueeze = detectBollingerSqueeze(bollingerResults)
   if (bbSqueeze.isSqueeze && bbSqueeze.squeezeIntensity > 0.3) {
     if (structure === 'BULLISH' || (ema20 !== null && ema50 !== null && ema20 > ema50)) {
-      addBuy(1, `Bollinger squeeze with bullish bias — breakout imminent`)
+      addBuy(1, `Bollinger squeeze with bullish bias — breakout imminent`, 'momentum')
     } else if (structure === 'BEARISH' || (ema20 !== null && ema50 !== null && ema20 < ema50)) {
-      addSell(1, `Bollinger squeeze with bearish bias — breakout imminent`)
+      addSell(1, `Bollinger squeeze with bearish bias — breakout imminent`, 'momentum')
     }
   }
 
   if (priceAboveCloud) {
-    addBuy(2, 'Price above Ichimoku cloud — bullish')
+    addBuy(2, 'Price above Ichimoku cloud — bullish', 'trend')
   } else if (priceBelowCloud) {
-    addSell(2, 'Price below Ichimoku cloud — bearish')
+    addSell(2, 'Price below Ichimoku cloud — bearish', 'trend')
   }
 
   if (ichimoku.tenkan !== null && ichimoku.kijun !== null) {
     const prevIchimoku = ichimokuResults[lastIndex - 1]
     if (prevIchimoku?.tenkan !== null && prevIchimoku?.kijun !== null) {
       if (prevIchimoku.tenkan <= prevIchimoku.kijun && ichimoku.tenkan > ichimoku.kijun) {
-        addBuy(2, 'Ichimoku TK cross (bullish)')
+        addBuy(2, 'Ichimoku TK cross (bullish)', 'trend')
       } else if (prevIchimoku.tenkan >= prevIchimoku.kijun && ichimoku.tenkan < ichimoku.kijun) {
-        addSell(2, 'Ichimoku TK cross (bearish)')
+        addSell(2, 'Ichimoku TK cross (bearish)', 'trend')
       }
     }
   }
@@ -363,143 +549,268 @@ export function generateSignal(
   if (ichimoku.chikou !== null && lastIndex >= 26) {
     const price26Ago = candles[lastIndex - 26].close
     if (ichimoku.chikou > price26Ago) {
-      addBuy(1, 'Chikou span above price — bullish confirmation')
+      addBuy(1, 'Chikou span above price — bullish confirmation', 'trend')
     } else if (ichimoku.chikou < price26Ago) {
-      addSell(1, 'Chikou span below price — bearish confirmation')
+      addSell(1, 'Chikou span below price — bearish confirmation', 'trend')
     }
   }
 
-  if (williamsR.value !== null) {
-    if (isRanging) {
-      if (williamsR.value <= -80) {
-        addBuy(2, `Williams %R oversold (${williamsR.value.toFixed(1)})`)
-      } else if (williamsR.value >= -20) {
-        addSell(2, `Williams %R overbought (${williamsR.value.toFixed(1)})`)
-      }
-    } else {
-      if (williamsR.value > -50 && williamsR.value < -20) {
-        addBuy(1, `Williams %R bullish momentum (${williamsR.value.toFixed(1)})`)
-      } else if (williamsR.value < -50 && williamsR.value > -80) {
-        addSell(1, `Williams %R bearish momentum (${williamsR.value.toFixed(1)})`)
-      }
-    }
-  }
+   if (williamsR.value !== null) {
+     if (isRanging) {
+       if (williamsR.value <= -80) {
+addBuy(2, `Williams %R oversold (${williamsR.value.toFixed(1)})`, 'meanReversion')
+       } else if (williamsR.value >= -20) {
+         addSell(2, `Williams %R overbought (${williamsR.value.toFixed(1)})`, 'meanReversion')
+       }
+     } else {
+       if (williamsR.value > -50 && williamsR.value < -20) {
+         addBuy(1, `Williams %R bullish momentum (${williamsR.value.toFixed(1)})`, 'momentum')
+       } else if (williamsR.value < -50 && williamsR.value > -80) {
+         addSell(1, `Williams %R bearish momentum (${williamsR.value.toFixed(1)})`, 'momentum')
+       }
+     }
+   }
 
-  const fibonacci = calculateFibonacciLevels(candles, lastIndex, signalFromScores(buyScore, sellScore))
+   if (obvAnalysis.obvDivergence === 'BULLISH') {
+     addBuy(2, 'OBV bullish divergence — volume confirms uptrend', 'volume')
+   } else if (obvAnalysis.obvDivergence === 'BEARISH') {
+     addSell(2, 'OBV bearish divergence — volume confirms downtrend', 'volume')
+   } else if (obvAnalysis.obvConfirm) {
+     if (entry > candles[lastIndex - 1]?.close) {
+       addBuy(1, 'OBV confirms bullish momentum', 'volume')
+     } else {
+       addSell(1, 'OBV confirms bearish momentum', 'volume')
+     }
+   }
+
+   if (vwapAnalysis.aboveVWAP && vwapAnalysis.vwapTrend === 'rising') {
+     addBuy(2, `Price above rising VWAP — bullish (${vwapAnalysis.distanceFromVWAP.toFixed(2)}%)`, 'volume')
+   } else if (vwapAnalysis.belowVWAP && vwapAnalysis.vwapTrend === 'falling') {
+     addSell(2, `Price below falling VWAP — bearish (${vwapAnalysis.distanceFromVWAP.toFixed(2)}%)`, 'volume')
+   } else if (vwapAnalysis.aboveVWAP) {
+     addBuy(1, 'Price above VWAP', 'volume')
+   } else if (vwapAnalysis.belowVWAP) {
+     addSell(1, 'Price below VWAP', 'volume')
+   }
+
+   if (sentimentScore.fearGreedIndex < 30) {
+     addBuy(2, `Extreme Fear sentiment (FGI ${sentimentScore.fearGreedIndex}) — contrarian buy`, 'sentiment')
+   } else if (sentimentScore.fearGreedIndex > 70) {
+     addSell(2, `Extreme Greed sentiment (FGI ${sentimentScore.fearGreedIndex}) — contrarian sell`, 'sentiment')
+   } else if (sentimentScore.fearGreedIndex < 45) {
+     addBuy(1, `Fear sentiment (FGI ${sentimentScore.fearGreedIndex}) — mild bullish`, 'sentiment')
+   } else if (sentimentScore.fearGreedIndex > 55) {
+     addSell(1, `Greed sentiment (FGI ${sentimentScore.fearGreedIndex}) — mild bearish`, 'sentiment')
+     }
+
+   if (supertrendLast.direction === 'UP') {
+     addBuy(2, 'Supertrend bullish — trend is up', 'trend')
+   } else {
+     addSell(2, 'Supertrend bearish — trend is down', 'trend')
+   }
+
+   if (fundingData.bias === 'bullish' && fundingData.intensity > 0.3) {
+     addBuy(2, `Funding rate bearish with high intensity — contrarian long`, 'sentiment')
+   } else if (fundingData.bias === 'bearish' && fundingData.intensity > 0.3) {
+     addSell(2, `Funding rate bullish with high intensity — contrarian short`, 'sentiment')
+   } else if (fundingData.bias === 'bullish') {
+     addBuy(1, 'Funding rate bearish — mild bullish bias', 'sentiment')
+   } else if (fundingData.bias === 'bearish') {
+     addSell(1, 'Funding rate bullish — mild bearish bias', 'sentiment')
+   }
+
+   if (mvrvData.signal === 'BUY') {
+     addBuy(2, `MVRV ${mvrvData.mvrv?.toFixed(2)} — ${mvrvData.reason}`, 'sentiment')
+   } else if (mvrvData.signal === 'SELL') {
+     addSell(2, `MVRV ${mvrvData.mvrv?.toFixed(2)} — ${mvrvData.reason}`, 'sentiment')
+   }
+
+   if (fisherAnalysis.signal === 'BUY' && fisherAnalysis.strength > 0.5) {
+     addBuy(2, `Fisher Transform bullish (strength ${fisherAnalysis.strength.toFixed(2)})`, 'momentum')
+   } else if (fisherAnalysis.signal === 'SELL' && fisherAnalysis.strength > 0.5) {
+     addSell(2, `Fisher Transform bearish (strength ${fisherAnalysis.strength.toFixed(2)})`, 'momentum')
+   } else if (fisherAnalysis.divergence === 'BULLISH') {
+     addBuy(1, 'Fisher Transform bullish divergence', 'momentum')
+   } else if (fisherAnalysis.divergence === 'BEARISH') {
+     addSell(1, 'Fisher Transform bearish divergence', 'momentum')
+   }
+
+   if (cmoAnalysis.signal === 'BUY' && cmoAnalysis.momentum === 'increasing') {
+     addBuy(2, `CMO oversold and momentum increasing (CMO: ${cmoValues[lastIndex]?.toFixed(1)})`, 'momentum')
+   } else if (cmoAnalysis.signal === 'SELL' && cmoAnalysis.momentum === 'increasing') {
+     addSell(2, `CMO overbought and momentum increasing (CMO: ${cmoValues[lastIndex]?.toFixed(1)})`, 'momentum')
+   } else if (cmoAnalysis.momentum === 'increasing') {
+     if (cmoValues[lastIndex] !== null && cmoValues[lastIndex]! > 0) {
+       addBuy(1, 'CMO momentum increasing — bullish', 'momentum')
+     } else {
+       addSell(1, 'CMO momentum increasing — bearish', 'momentum')
+     }
+   }
+
+   if (keltnerAnalysis.squeeze) {
+     addBuy(1, 'Keltner Channel squeeze — breakout imminent', 'volatility')
+   } else if (keltnerAnalysis.aboveUpper) {
+     addBuy(2, 'Price above Keltner upper band — strong bullish momentum', 'volatility')
+   } else if (keltnerAnalysis.belowLower) {
+     addSell(2, 'Price below Keltner lower band — strong bearish momentum', 'volatility')
+   }
+
+   if (sarAnalysis.signal === 'BUY') {
+     addBuy(2, 'Parabolic SAR flipped bullish — trend reversal', 'trend')
+   } else if (sarAnalysis.signal === 'SELL') {
+     addSell(2, 'Parabolic SAR flipped bearish — trend reversal', 'trend')
+   }
+
+   if (stochRSIAnalysis.signal === 'BUY' && stochRSIAnalysis.oversold) {
+     addBuy(3, `Stochastic RSI oversold crossover — strong buy signal`, 'momentum')
+   } else if (stochRSIAnalysis.signal === 'SELL' && stochRSIAnalysis.overbought) {
+     addSell(3, `Stochastic RSI overbought crossover — strong sell signal`, 'momentum')
+   } else if (stochRSIAnalysis.overbought) {
+     addSell(1, 'Stochastic RSI overbought — caution', 'momentum')
+   } else if (stochRSIAnalysis.oversold) {
+     addBuy(1, 'Stochastic RSI oversold — potential reversal', 'momentum')
+   }
+
+   if (atrPercentileData.regime === 'low') {
+     addBuy(1, `ATR at ${atrPercentileData.percentile.toFixed(0)}th percentile — low volatility breakout setup`, 'volatility')
+   } else if (atrPercentileData.regime === 'high') {
+     addSell(1, `ATR at ${atrPercentileData.percentile.toFixed(0)}th percentile — high volatility, risk of reversal`, 'volatility')
+   }
+
+    const fibonacci = calculateFibonacciLevels(candles, lastIndex, signalFromScores(buyScore, sellScore))
   if (fibonacci.nearestLevel !== null) {
     const distToLevel = Math.abs(entry - fibonacci.nearestLevel) / entry
     if (distToLevel < 0.002) {
       if (fibonacci.levelType === 'support') {
-        addBuy(1, `Price near Fibonacci ${fibonacci.levelName} support`)
+        addBuy(1, `Price near Fibonacci ${fibonacci.levelName} support`, 'trend')
       } else {
-        addSell(1, `Price near Fibonacci ${fibonacci.levelName} resistance`)
+        addSell(1, `Price near Fibonacci ${fibonacci.levelName} resistance`, 'trend')
       }
     }
   }
 
   const divergence = detectDivergence(candles, rsiValues, lastIndex)
   if (divergence === 'BULLISH') {
-    addBuy(2, 'Bullish RSI divergence detected')
+    addBuy(2, 'Bullish RSI divergence detected', 'momentum')
   } else if (divergence === 'BEARISH') {
-    addSell(2, 'Bearish RSI divergence detected')
+    addSell(2, 'Bearish RSI divergence detected', 'momentum')
   }
 
   const priceAction = analyzePriceAction(candles, lastIndex)
   if (priceAction.bullishEngulfing) {
-    addBuy(2, 'Bullish engulfing candle pattern')
+    addBuy(2, 'Bullish engulfing candle pattern', 'priceAction')
   }
   if (priceAction.bearishEngulfing) {
-    addSell(2, 'Bearish engulfing candle pattern')
+    addSell(2, 'Bearish engulfing candle pattern', 'priceAction')
   }
   if (priceAction.hammer) {
-    addBuy(2, 'Hammer candle pattern — potential reversal')
+    addBuy(2, 'Hammer candle pattern — potential reversal', 'priceAction')
   }
   if (priceAction.shootingStar) {
-    addSell(2, 'Shooting star pattern — potential reversal')
+    addSell(2, 'Shooting star pattern — potential reversal', 'priceAction')
   }
   if (priceAction.doji) {
     if (structure === 'BULLISH') {
-      addBuy(1, 'Doji in bullish structure — continuation hint')
+      addBuy(1, 'Doji in bullish structure — continuation hint', 'priceAction')
     } else if (structure === 'BEARISH') {
-      addSell(1, 'Doji in bearish structure — continuation hint')
+      addSell(1, 'Doji in bearish structure — continuation hint', 'priceAction')
     }
   }
   if (priceAction.bullishHarami) {
-    addBuy(1, 'Bullish harami pattern')
+    addBuy(1, 'Bullish harami pattern', 'priceAction')
   }
   if (priceAction.bearishHarami) {
-    addSell(1, 'Bearish harami pattern')
+    addSell(1, 'Bearish harami pattern', 'priceAction')
   }
   if (priceAction.morningStar) {
-    addBuy(2, 'Morning star pattern — bullish reversal')
+    addBuy(2, 'Morning star pattern — bullish reversal', 'priceAction')
   }
   if (priceAction.eveningStar) {
-    addSell(2, 'Evening star pattern — bearish reversal')
+    addSell(2, 'Evening star pattern — bearish reversal', 'priceAction')
   }
 
-  const sessionQuality = analyzeSession()
-  const sessionMultiplier = sessionQuality.multiplier
+  const cryptoSentiment = analyzeCryptoSentiment(closes, atrValues.filter((v): v is number => v !== null), lastIndex)
+  const cryptoMultiplier = cryptoSentiment.cryptoMultiplier
 
   const totalScore = buyScore + sellScore
   const scoreDifference = Math.abs(buyScore - sellScore)
 
   let signal: Signal
 
+  const holdScoreGap = options.holdScoreGap ?? HOLD_SCORE_GAP
+  const minDirectionalScore = options.minDirectionalScore ?? MIN_DIRECTIONAL_SCORE
+
   if (
-    scoreDifference <= HOLD_SCORE_GAP &&
-    Math.max(buyScore, sellScore) < MIN_DIRECTIONAL_SCORE
+    scoreDifference <= holdScoreGap &&
+    Math.max(buyScore, sellScore) < minDirectionalScore
   ) {
     signal = 'HOLD'
   } else {
     signal = buyScore >= sellScore ? 'BUY' : 'SELL'
   }
 
-  let confidence = calculateConfidence(
-    buyScore, sellScore, signal, trendStrength, structure,
-    rsi, macd.histogram, adxValue, sessionMultiplier
-  )
+   let confidence = calculateConfidence(
+     buyScore, sellScore, signal, trendStrength, structure,
+     rsi, macd.histogram, adxValue, cryptoMultiplier, sentimentImpact,
+     supertrendLast.direction,
+     fisherAnalysis.strength,
+     cmoAnalysis.signal,
+     keltnerAnalysis.squeeze,
+     sarAnalysis.signal,
+     stochRSIAnalysis.overbought,
+     stochRSIAnalysis.oversold,
+     atrPercentileData.regime
+   )
 
   if (signal === 'HOLD') {
-    return createResult(
-      'HOLD', entry, null, null, null,
-      {
-        ema20, ema50, rsi, macd, atr,
-        adx: adxResult.adx, plusDI: adxResult.plusDI, minusDI: adxResult.minusDI,
-        stochK: stoch.k, stochD: stoch.d,
-        bbUpper: bb.upper, bbLower: bb.lower, bbWidth: bb.width,
-        ichimokuCloud: priceAboveCloud || priceBelowCloud ? true : null,
-      },
-      Math.round(confidence),
-      [
-        'Market direction is currently mixed',
-        'No side has a strong enough advantage',
-        ...selectHoldReasons(buyReasons, sellReasons),
-      ]
-    )
-  }
+      return createResult(
+        'HOLD', entry, null, null, null,
+        {
+          ema20, ema50, rsi, macd, atr,
+          adx: adxResult.adx, plusDI: adxResult.plusDI, minusDI: adxResult.minusDI,
+          stochK: stoch.k, stochD: stoch.d,
+          bbUpper: bb.upper, bbLower: bb.lower, bbWidth: bb.width,
+          ichimokuCloud: priceAboveCloud || priceBelowCloud ? true : null,
+          obvRising: obvAnalysis.obvRising,
+          obvDivergence: obvAnalysis.obvDivergence,
+          aboveVWAP: vwapAnalysis.aboveVWAP,
+          sentimentLabel: sentimentScore.sentiment,
+          fearGreedIndex: sentimentScore.fearGreedIndex,
+          supertrendValue: supertrendLast.supertrend,
+          supertrendDirection: supertrendLast.direction,
+          fundingBias: fundingData.bias,
+          fundingIntensity: fundingData.intensity,
+          mvrvSignal: mvrvData.signal,
+          mvrvValuation: mvrvData.valuation,
+          fisherSignal: fisherAnalysis.signal,
+          fisherStrength: fisherAnalysis.strength,
+          cmoSignal: cmoAnalysis.signal,
+          cmoStrength: cmoAnalysis.strength,
+          keltnerSqueeze: keltnerAnalysis.squeeze,
+          sarSignal: sarAnalysis.signal,
+          stochRSISignal: stochRSIAnalysis.signal,
+          stochRSIOverbought: stochRSIAnalysis.overbought,
+          stochRSIOversold: stochRSIAnalysis.oversold,
+          atrPercentile: atrPercentileData.percentile,
+          atrRegime: atrPercentileData.regime,
+        },
+        Math.round(confidence),
+        [
+          'Market direction is currently mixed',
+          'No side has a strong enough advantage',
+          ...selectHoldReasons(buyReasons, sellReasons),
+        ]
+      )
+    }
 
-  const reasons = signal === 'BUY' ? buyReasons : sellReasons
+    const reasons = signal === 'BUY' ? buyReasons : sellReasons
 
   const structureStart = Math.max(0, lastIndex - SWING_LOOKBACK)
   const structureCandles = candles.slice(structureStart, lastIndex)
   const recentLow = Math.min(...structureCandles.map(c => c.low))
   const recentHigh = Math.max(...structureCandles.map(c => c.high))
 
-  let stopLoss: number
-
-  if (signal === 'BUY') {
-    const structuralStop = recentLow - atr * ATR_BUFFER
-    const volatilityStop = entry - atr * ATR_SL_MULTIPLIER
-    const emaStop = (ema50 ?? entry) - atr * 0.5
-    const tightestStop = Math.max(structuralStop, volatilityStop, emaStop)
-    stopLoss = Math.max(tightestStop, entry - atr * 3)
-  } else {
-    const structuralStop = recentHigh + atr * ATR_BUFFER
-    const volatilityStop = entry + atr * ATR_SL_MULTIPLIER
-    const emaStop = (ema50 ?? entry) + atr * 0.5
-    const tightestStop = Math.min(structuralStop, volatilityStop, emaStop)
-    stopLoss = Math.min(tightestStop, entry + atr * 3)
-  }
+  let stopLoss = selectStopLossLevel(signal, entry, atr, ema50, recentLow, recentHigh)
 
   if (accountSize > 0) {
     const maxRiskDollars = accountSize * RISK_PERCENT
@@ -517,20 +828,46 @@ export function generateSignal(
 
   const risk = Math.abs(entry - stopLoss)
 
-  if (!Number.isFinite(risk) || risk <= 0) {
-    return createResult(
-      signal, entry, null, null, null,
-      {
-        ema20, ema50, rsi, macd, atr,
-        adx: adxResult.adx, plusDI: adxResult.plusDI, minusDI: adxResult.minusDI,
-        stochK: stoch.k, stochD: stoch.d,
-        bbUpper: bb.upper, bbLower: bb.lower, bbWidth: bb.width,
-        ichimokuCloud: priceAboveCloud || priceBelowCloud ? true : null,
-      },
-      Math.round(confidence),
-      [...reasons, 'Unable to calculate valid risk']
-    )
+  const validStopSide = signal === 'BUY' ? stopLoss < entry : stopLoss > entry
+
+  const indicators = {
+    ema20, ema50, rsi, macd, atr,
+    adx: adxResult.adx, plusDI: adxResult.plusDI, minusDI: adxResult.minusDI,
+    stochK: stoch.k, stochD: stoch.d,
+    bbUpper: bb.upper, bbLower: bb.lower, bbWidth: bb.width,
+    ichimokuCloud: priceAboveCloud || priceBelowCloud ? true : null,
+    obvRising: obvAnalysis.obvRising,
+    obvDivergence: obvAnalysis.obvDivergence,
+    aboveVWAP: vwapAnalysis.aboveVWAP,
+    sentimentLabel: sentimentScore.sentiment,
+    fearGreedIndex: sentimentScore.fearGreedIndex,
+    supertrendValue: supertrendLast.supertrend,
+    supertrendDirection: supertrendLast.direction,
+    fundingBias: fundingData.bias,
+    fundingIntensity: fundingData.intensity,
+    mvrvSignal: mvrvData.signal,
+    mvrvValuation: mvrvData.valuation,
+    fisherSignal: fisherAnalysis.signal,
+    fisherStrength: fisherAnalysis.strength,
+    cmoSignal: cmoAnalysis.signal,
+    cmoStrength: cmoAnalysis.strength,
+    keltnerSqueeze: keltnerAnalysis.squeeze,
+    sarSignal: sarAnalysis.signal,
+    stochRSISignal: stochRSIAnalysis.signal,
+    stochRSIOverbought: stochRSIAnalysis.overbought,
+    stochRSIOversold: stochRSIAnalysis.oversold,
+    atrPercentile: atrPercentileData.percentile,
+    atrRegime: atrPercentileData.regime,
   }
+
+   if (!Number.isFinite(risk) || risk <= 0 || !validStopSide) {
+      return createResult(
+        signal, entry, null, null, null,
+        indicators,
+        Math.round(confidence),
+        [...reasons, 'Unable to calculate valid risk']
+      )
+    }
 
   const dynamicRiskReward = calculateDynamicRiskReward(atr, entry, trendStrength, signal, confidence, risk)
 
@@ -594,20 +931,27 @@ export function generateSignal(
     reasons.push(`Strong R:R ratio (${riskReward.toFixed(2)})`)
   }
 
-  confidence = Math.round(Math.min(Math.max(confidence, MIN_CONFIDENCE), MAX_CONFIDENCE))
+   confidence = Math.round(Math.min(Math.max(confidence, MIN_CONFIDENCE), MAX_CONFIDENCE))
 
-  return createResult(
-    signal, entry, stopLoss, takeProfit, riskReward,
-    {
-      ema20, ema50, rsi, macd, atr,
-      adx: adxResult.adx, plusDI: adxResult.plusDI, minusDI: adxResult.minusDI,
-      stochK: stoch.k, stochD: stoch.d,
-      bbUpper: bb.upper, bbLower: bb.lower, bbWidth: bb.width,
-      ichimokuCloud: priceAboveCloud || priceBelowCloud ? true : null,
-    },
-    confidence,
-    reasons.slice(0, 10)
-  )
+   const validInvariants = signal === 'BUY'
+     ? stopLoss < entry && takeProfit > entry
+     : stopLoss > entry && takeProfit < entry
+
+   if (!validInvariants) {
+     return createResult(
+       signal, entry, null, null, null,
+       indicators,
+       confidence,
+       [...reasons, 'Unable to construct a valid SL/TP setup']
+     )
+   }
+
+   return createResult(
+     signal, entry, stopLoss, takeProfit, riskReward,
+     indicators,
+     confidence,
+     reasons.slice(0, 10)
+   )
 }
 
 function signalFromScores(buyScore: number, sellScore: number): 'BUY' | 'SELL' {
@@ -768,20 +1112,72 @@ function analyzePriceAction(
   }
 }
 
-function analyzeSession(): { session: string; multiplier: number } {
-  const hour = new Date().getUTCHours()
+function analyzeCryptoSentiment(
+  closes: number[],
+  atrValues: number[],
+  lastIndex: number,
+  lookback: number = 30
+): {
+  volatilityRegime: 'low' | 'medium' | 'high'
+  cryptoMultiplier: number
+  volatilityReason: string
+} {
+  const start = Math.max(0, lastIndex - lookback)
+  const recentATR = atrValues.slice(start, lastIndex + 1).filter((v): v is number => v !== null)
+  const recentCloses = closes.slice(start, lastIndex + 1)
 
-  if (hour >= 0 && hour < 8) {
-    return { session: 'Asian', multiplier: 0.8 }
-  } else if (hour >= 8 && hour < 13) {
-    return { session: 'London', multiplier: 1.0 }
-  } else if (hour >= 13 && hour < 16) {
-    return { session: 'London-NY Overlap', multiplier: 1.1 }
-  } else if (hour >= 16 && hour < 21) {
-    return { session: 'New York', multiplier: 1.0 }
-  } else {
-    return { session: 'Late NY', multiplier: 0.85 }
+  if (recentATR.length < 5) {
+    return { volatilityRegime: 'medium', cryptoMultiplier: 1.0, volatilityReason: 'Insufficient data' }
   }
+
+  const avgATR = recentATR.reduce((a, b) => a + b, 0) / recentATR.length
+  const avgClose = recentCloses.reduce((a, b) => a + b, 0) / recentCloses.length
+  const volatilityRatio = avgClose > 0 ? (avgATR / avgClose) * 100 : 0
+
+  let volatilityRegime: 'low' | 'medium' | 'high'
+  let cryptoMultiplier: number
+  let volatilityReason: string
+
+  if (volatilityRatio < 1.5) {
+    volatilityRegime = 'low'
+    cryptoMultiplier = 1.0
+    volatilityReason = `Low volatility (ATR/Close ${volatilityRatio.toFixed(2)}%)`
+  } else if (volatilityRatio < 4.0) {
+    volatilityRegime = 'medium'
+    cryptoMultiplier = 1.0
+    volatilityReason = `Medium volatility (ATR/Close ${volatilityRatio.toFixed(2)}%)`
+  } else {
+    volatilityRegime = 'high'
+    cryptoMultiplier = 0.9
+    volatilityReason = `High volatility (ATR/Close ${volatilityRatio.toFixed(2)}%) — increased risk`
+  }
+
+  return { volatilityRegime, cryptoMultiplier, volatilityReason }
+}
+
+export function selectStopLossLevel(
+  signal: Signal,
+  entry: number,
+  atr: number,
+  ema50: number | null,
+  recentLow: number,
+  recentHigh: number
+): number {
+  if (signal === 'BUY') {
+    const structuralStop = recentLow - atr * ATR_BUFFER
+    const volatilityStop = entry - atr * ATR_SL_MULTIPLIER
+    const emaStop = (ema50 ?? entry) - atr * 0.5
+    const validStops = [structuralStop, volatilityStop, emaStop].filter(stop => stop < entry)
+    const tightestStop = validStops.length > 0 ? Math.max(...validStops) : volatilityStop
+    return Math.max(tightestStop, entry - atr * 3)
+  }
+
+  const structuralStop = recentHigh + atr * ATR_BUFFER
+  const volatilityStop = entry + atr * ATR_SL_MULTIPLIER
+  const emaStop = (ema50 ?? entry) + atr * 0.5
+  const validStops = [structuralStop, volatilityStop, emaStop].filter(stop => stop > entry)
+  const tightestStop = validStops.length > 0 ? Math.min(...validStops) : volatilityStop
+  return Math.min(tightestStop, entry + atr * 3)
 }
 
 function calculateDynamicRiskReward(
@@ -827,7 +1223,16 @@ function calculateConfidence(
   rsi: number,
   histogram: number,
   adx: number,
-  sessionMultiplier: number
+  cryptoMultiplier: number,
+  sentimentImpact: { sentimentMultiplier: number; fearBonus: number; greedPenalty: number },
+  supertrendDirection: 'UP' | 'DOWN' | null,
+  fisherStrength: number | null,
+  cmoSignal: 'BUY' | 'SELL' | 'NONE' | null,
+  keltnerSqueeze: boolean | null,
+  sarSignal: 'BUY' | 'SELL' | 'NONE' | null,
+  stochRSIOverbought: boolean | null,
+  stochRSIOversold: boolean | null,
+  atrRegime: 'low' | 'medium' | 'high' | null
 ): number {
   const total = buyScore + sellScore
   if (total <= 0) return 30
@@ -851,7 +1256,29 @@ function calculateConfidence(
   else if (adx >= 25) confidence += 1
   else if (adx < 15) confidence -= 3
 
-  confidence *= sessionMultiplier
+  confidence *= cryptoMultiplier
+  confidence += sentimentImpact.fearBonus + sentimentImpact.greedPenalty
+
+  if (supertrendDirection === 'UP' && signal === 'BUY') confidence += 2
+  else if (supertrendDirection === 'DOWN' && signal === 'SELL') confidence += 2
+
+  if (fisherStrength !== null && fisherStrength > 0.5) {
+    confidence += 2
+  }
+
+  if (cmoSignal === 'BUY' && signal === 'BUY') confidence += 1
+  else if (cmoSignal === 'SELL' && signal === 'SELL') confidence += 1
+
+  if (keltnerSqueeze) confidence += 1
+
+  if (sarSignal === 'BUY' && signal === 'BUY') confidence += 2
+  else if (sarSignal === 'SELL' && signal === 'SELL') confidence += 2
+
+  if (stochRSIOverbought && signal === 'SELL') confidence += 1
+  if (stochRSIOversold && signal === 'BUY') confidence += 1
+
+  if (atrRegime === 'low' && signal !== 'HOLD') confidence += 1
+  else if (atrRegime === 'high') confidence -= 1
 
   if (signal === 'HOLD') confidence = Math.min(confidence, 50)
 
@@ -882,7 +1309,7 @@ function analyzeMomentum(
   }
 }
 
-function calculateSlope(values: (number | null)[], index: number, lookback: number): number {
+export function calculateSlope(values: (number | null)[], index: number, lookback: number): number {
   const current = values[index]
   const previous = values[Math.max(0, index - lookback)]
   if (current === null || previous === null) return 0
@@ -1029,7 +1456,7 @@ function detectMACDDivergence(
   return 'NONE'
 }
 
-function findSwingPoints(data: number[], type: 'HIGH' | 'LOW'): number[] {
+export function findSwingPoints(data: number[], type: 'HIGH' | 'LOW'): number[] {
   const points: number[] = []
   for (let i = 2; i < data.length - 2; i++) {
     const value = data[i]
@@ -1108,7 +1535,7 @@ function selectHoldReasons(buyReasons: string[], sellReasons: string[]): string[
   return reasons
 }
 
-function createResult(
+ function createResult(
   signal: Signal,
   entry: number,
   stopLoss: number | null,
@@ -1129,6 +1556,28 @@ function createResult(
     bbLower: number | null
     bbWidth: number | null
     ichimokuCloud: boolean | null
+    obvRising: boolean | null
+    obvDivergence: 'BULLISH' | 'BEARISH' | 'NONE' | null
+    aboveVWAP: boolean | null
+    sentimentLabel: string | null
+    fearGreedIndex: number | null
+    supertrendValue: number | null
+    supertrendDirection: 'UP' | 'DOWN' | null
+    fundingBias: 'bullish' | 'bearish' | 'neutral' | null
+    fundingIntensity: number | null
+    mvrvSignal: 'BUY' | 'SELL' | 'HOLD' | null
+    mvrvValuation: string | null
+    fisherSignal: 'BUY' | 'SELL' | 'NONE' | null
+    fisherStrength: number | null
+    cmoSignal: 'BUY' | 'SELL' | 'NONE' | null
+    cmoStrength: number | null
+    keltnerSqueeze: boolean | null
+    sarSignal: 'BUY' | 'SELL' | 'NONE' | null
+    stochRSISignal: 'BUY' | 'SELL' | 'NONE' | null
+    stochRSIOverbought: boolean | null
+    stochRSIOversold: boolean | null
+    atrPercentile: number | null
+    atrRegime: 'low' | 'medium' | 'high' | null
   },
   confidence: number,
   reasons: string[]
@@ -1142,7 +1591,7 @@ function createResult(
     ...indicators,
     confidence,
     reasons,
-    output: createOutput(signal, entry, stopLoss, takeProfit, riskReward, confidence, reasons),
+    output: createOutput(signal, entry, stopLoss, takeProfit, riskReward, confidence, reasons, indicators.sentimentLabel, indicators.fearGreedIndex),
   }
 }
 
@@ -1153,8 +1602,13 @@ function createOutput(
   takeProfit: number | null,
   riskReward: number | null,
   confidence: number,
-  reasons: string[]
+  reasons: string[],
+  sentimentLabel: string | null,
+  fearGreedIndex: number | null
 ): string {
+  const sentimentLine = sentimentLabel && fearGreedIndex !== null
+    ? `Sentiment: ${sentimentLabel} (FGI: ${fearGreedIndex})`
+    : ''
   const lines = [
     signal,
     `Entry: ${formatPrice(entry)}`,
@@ -1162,6 +1616,7 @@ function createOutput(
     `TP: ${takeProfit !== null ? formatPrice(takeProfit) : 'N/A'}`,
     `R:R: ${riskReward !== null ? riskReward.toFixed(2) : 'N/A'}`,
     `Confidence: ${confidence}%`,
+    ...(sentimentLine ? [sentimentLine] : []),
   ]
   if (reasons.length > 0) {
     lines.push('Reasons:', ...reasons.map(r => `• ${r}`))

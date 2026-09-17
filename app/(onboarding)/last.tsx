@@ -1,4 +1,4 @@
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import React from 'react';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,18 +33,18 @@ export default function LastOnboarding() {
         <View className="w-full items-center">
           <OnboardingDots active={3} />
 
-          <Pressable
+          <TouchableOpacity
             className="mt-6 h-14 w-full items-center justify-center overflow-hidden rounded-xl bg-[#6237D8]"
             onPress={() => router.replace('/(auth)/signUp')}>
             <Text className="text-center text-[15px] font-semibold text-white">
               Create your account
             </Text>
-          </Pressable>
-          <Pressable className="mt-5" onPress={() => router.replace('/(auth)/logIn')}>
+          </TouchableOpacity>
+          <TouchableOpacity className="mt-5" onPress={() => router.replace('/(auth)/logIn')}>
             <Text className="text-[13px] font-medium text-[#B66CFF]">
               I already have an account
             </Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
