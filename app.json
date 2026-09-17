@@ -10,7 +10,7 @@
     ],
     "web": {
       "bundler": "metro",
-      "output": "static",
+      "output": "server",
       "favicon": "./assets/favicon.jpg"
     },
     "plugins": [
@@ -23,7 +23,6 @@
         }
       ],
       "expo-font",
-      "@clerk/expo",
       "expo-status-bar",
       "expo-web-browser",
       "expo-secure-store",

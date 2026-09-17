@@ -19,7 +19,7 @@ import { getAuth } from 'firebase/auth'
 import { waitForAuth } from '../firebase/authService'
 export { waitForAuth }
 import { CurrencyPair, Trade, UserProfile, MarketNews } from '../../types'
-import { getQuote, getMultipleQuotes } from '../api/finnhub'
+import { fetchQuote as apiFetchQuote, fetchSnapshot } from '../api/client'
 
 const PAIR_META: Record<string, { name: string; category: CurrencyPair['category']; flag1: string; flag2: string }> = {
   'EUR/USD': { name: 'Euro / US Dollar', category: 'Major', flag1: '🇪🇺', flag2: '🇺🇸' },
@@ -140,62 +140,65 @@ export async function getCurrencyPairs(category?: string): Promise<CurrencyPair[
   const storedPairs = await loadPairsFromStorage(cacheKey)
   if (storedPairs) {
     pairsCache.set(cacheKey, { data: storedPairs, timestamp: Date.now() })
+    refreshQuotesInBackground(cacheKey, storedPairs.map(p => p.symbol))
     return storedPairs
   }
 
   const symbols = Object.keys(PAIR_META)
-  const filtered = category && category !== 'All'
-    ? symbols.filter(s => PAIR_META[s].category === category)
-    : symbols
+  const isAll = !category || category === 'All' || category.toLowerCase() === 'all'
+  const filtered = isAll
+    ? symbols
+    : symbols.filter(s => PAIR_META[s].category === category)
 
-  try {
-    const quotes = await getMultipleQuotes(filtered)
+  const result = filtered.map(symbol => {
+    const meta = PAIR_META[symbol]
+    const fallback = FALLBACK_QUOTES[symbol]
+    return {
+      symbol,
+      name: meta.name,
+      category: meta.category,
+      price: fallback?.price ?? 0,
+      change: fallback?.change ?? 0,
+      changePercent: fallback?.changePercent ?? 0,
+      bid: fallback?.bid ?? 0,
+      ask: fallback?.ask ?? 0,
+      spread: fallback?.ask && fallback?.bid ? Number(((fallback.ask - fallback.bid) * (symbol.includes('JPY') ? 100 : 10000)).toFixed(1)) : 0,
+      dayHigh: fallback?.dayHigh ?? 0,
+      dayLow: fallback?.dayLow ?? 0,
+      flag1: meta.flag1,
+      flag2: meta.flag2,
+    }
+  })
 
-    const result = filtered.map(symbol => {
-      const meta = PAIR_META[symbol]
-      const quote = quotes[symbol] || FALLBACK_QUOTES[symbol]
+  pairsCache.set(cacheKey, { data: result, timestamp: Date.now() })
+  savePairsToStorage(cacheKey, result)
+  refreshQuotesInBackground(cacheKey, filtered)
+
+  return result
+}
+
+function refreshQuotesInBackground(cacheKey: string, symbols: string[]): void {
+  fetchSnapshot(symbols).then(result => {
+    const cached = pairsCache.get(cacheKey)
+    if (!cached) return
+    const updated = cached.data.map((pair: CurrencyPair) => {
+      const quote = result.data[pair.symbol]
+      if (!quote) return pair
       return {
-        symbol,
-        name: meta.name,
-        category: meta.category,
-        price: quote?.price ?? 0,
-        change: quote?.change ?? 0,
-        changePercent: quote?.changePercent ?? 0,
-        bid: quote?.bid ?? 0,
-        ask: quote?.ask ?? 0,
-        spread: quote?.ask && quote?.bid ? Number(((quote.ask - quote.bid) * (symbol.includes('JPY') ? 100 : 10000)).toFixed(1)) : 0,
-        dayHigh: quote?.dayHigh ?? 0,
-        dayLow: quote?.dayLow ?? 0,
-        flag1: meta.flag1,
-        flag2: meta.flag2,
+        ...pair,
+        price: quote.price,
+        change: quote.change,
+        changePercent: quote.changePercent,
+        bid: quote.bid,
+        ask: quote.ask,
+        spread: quote.ask && quote.bid ? Number(((quote.ask - quote.bid) * (pair.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)) : pair.spread,
+        dayHigh: quote.dayHigh,
+        dayLow: quote.dayLow,
       }
     })
-
-    pairsCache.set(cacheKey, { data: result, timestamp: Date.now() })
-    savePairsToStorage(cacheKey, result)
-    return result
-  } catch (error) {
-    console.error('Failed to fetch quotes, using fallback:', error)
-    return filtered.map(symbol => {
-      const meta = PAIR_META[symbol]
-      const fallback = FALLBACK_QUOTES[symbol]
-      return {
-        symbol,
-        name: meta.name,
-        category: meta.category,
-        price: fallback?.price ?? 0,
-        change: fallback?.change ?? 0,
-        changePercent: fallback?.changePercent ?? 0,
-        bid: fallback?.bid ?? 0,
-        ask: fallback?.ask ?? 0,
-        spread: 0,
-        dayHigh: fallback?.dayHigh ?? 0,
-        dayLow: fallback?.dayLow ?? 0,
-        flag1: meta.flag1,
-        flag2: meta.flag2,
-      }
-    })
-  }
+    pairsCache.set(cacheKey, { data: updated, timestamp: Date.now() })
+    savePairsToStorage(cacheKey, updated)
+  }).catch(() => {})
 }
 
 export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | undefined> {
@@ -243,44 +246,50 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
     }
   }
 
-  try {
-    const quote = await getQuote(symbol)
-    const isJPY = symbol.includes('JPY')
-    saveQuoteToStorage(symbol, quote)
+  const fallback = FALLBACK_QUOTES[symbol]
+  const isJPY = symbol.includes('JPY')
+
+    try {
+    const result = await apiFetchQuote(symbol)
+    if (!result) throw new Error('Quote null')
+    setCachedQuote(symbol, result)
+    saveQuoteToStorage(symbol, result)
     return {
       symbol,
       name: meta.name,
       category: meta.category,
-      price: quote.price,
-      change: quote.change,
-      changePercent: quote.changePercent,
-      bid: quote.bid,
-      ask: quote.ask,
-      spread: quote.ask && quote.bid ? Number(((quote.ask - quote.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
-      dayHigh: quote.dayHigh,
-      dayLow: quote.dayLow,
+      price: result.price,
+      change: result.change,
+      changePercent: result.changePercent,
+      bid: result.bid,
+      ask: result.ask,
+      spread: result.ask && result.bid ? Number(((result.ask - result.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
+      dayHigh: result.dayHigh,
+      dayLow: result.dayLow,
       flag1: meta.flag1,
       flag2: meta.flag2,
     }
-  } catch (error) {
-    console.error(`Failed to fetch quote for ${symbol}:`, error)
-    const fallback = FALLBACK_QUOTES[symbol]
-    const isJPY = symbol.includes('JPY')
-    return {
-      symbol,
-      name: meta.name,
-      category: meta.category,
-      price: fallback?.price ?? 0,
-      change: fallback?.change ?? 0,
-      changePercent: fallback?.changePercent ?? 0,
-      bid: fallback?.bid ?? 0,
-      ask: fallback?.ask ?? 0,
-      spread: fallback?.ask && fallback?.bid ? Number(((fallback.ask - fallback.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
-      dayHigh: fallback?.dayHigh ?? 0,
-      dayLow: fallback?.dayLow ?? 0,
-      flag1: meta.flag1,
-      flag2: meta.flag2,
+  } catch {
+    if (fallback) {
+      setCachedQuote(symbol, fallback)
+      saveQuoteToStorage(symbol, fallback)
+      return {
+        symbol,
+        name: meta.name,
+        category: meta.category,
+        price: fallback.price,
+        change: fallback.change,
+        changePercent: fallback.changePercent,
+        bid: fallback.bid,
+        ask: fallback.ask,
+        spread: fallback.ask && fallback.bid ? Number(((fallback.ask - fallback.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
+        dayHigh: fallback.dayHigh,
+        dayLow: fallback.dayLow,
+        flag1: meta.flag1,
+        flag2: meta.flag2,
+      }
     }
+    return undefined
   }
 }
 
@@ -424,12 +433,14 @@ export async function getUserTrades(tradeLimit = 50): Promise<Trade[]> {
     )
 
     const snapshot = await getDocs(q)
-    const trades = snapshot.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-      createdAt: d.data().createdAt?.toMillis?.() ?? Date.now(),
-      closedAt: d.data().closedAt?.toMillis?.() ?? null,
-    })) as Trade[]
+    const trades = snapshot.docs
+      .filter(d => d.id)
+      .map(d => ({
+        id: d.id,
+        ...d.data(),
+        createdAt: d.data().createdAt?.toMillis?.() ?? Date.now(),
+        closedAt: d.data().closedAt?.toMillis?.() ?? null,
+      })) as Trade[]
 
     return trades.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).slice(0, tradeLimit)
   } catch (error) {
@@ -464,37 +475,18 @@ export async function getUserOpenTrades(): Promise<Trade[]> {
 
 export async function getMarketNews(): Promise<MarketNews[]> {
   try {
-    const key = process.env.EXPO_PUBLIC_FINNHUB_API_KEY
-    if (!key) throw new Error('No Finnhub API key')
+    const { fetchNews } = await import('../api/client')
+    const newsData = await fetchNews()
 
-    const [forexRes, generalRes] = await Promise.all([
-      fetch(`https://finnhub.io/api/v1/news?category=forex&token=${key}`),
-      fetch(`https://finnhub.io/api/v1/news?category=general&token=${key}`),
-    ])
-
-    const forexData = forexRes.ok ? await forexRes.json() : []
-    const generalData = generalRes.ok ? await generalRes.json() : []
-
-    const all = [...(Array.isArray(forexData) ? forexData : []), ...(Array.isArray(generalData) ? generalData : [])]
-
-    const seen = new Set<string>()
     const results: MarketNews[] = []
-
-    for (const item of all) {
-      if (!item?.headline || seen.has(String(item.id))) continue
-      seen.add(String(item.id))
-
-      const match = (item.headline as string).match(/\b(EUR|GBP|USD|JPY|AUD|CAD|CHF|NZD|CNY|INR|MXN|TRY|SGD|HKD|ZAR|BRL|KRW)\b/)
-      const currency = match ? match[1] : (item.source || 'FX').slice(0, 4).toUpperCase()
-
+    for (const item of newsData) {
       results.push({
-        id: String(item.id),
-        currency,
-        title: item.headline,
-        time: formatTimeAgo(item.datetime),
+        id: item.id || String(Math.random()),
+        currency: item.currency || 'FX',
+        title: item.headline || item.title || '',
+        time: formatTimeAgo(item.datetime || Math.floor(Date.now() / 1000)),
         url: item.url || '',
       })
-
       if (results.length >= 10) break
     }
 

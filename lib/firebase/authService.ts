@@ -1,5 +1,4 @@
 import {
-  getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
@@ -7,9 +6,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { app, db } from '../firebaseConfig';
-
-const auth = getAuth(app);
+import { auth, db } from '../firebaseConfig';
 
 let authReady = false
 let authReadyResolve: (() => void) | null = null

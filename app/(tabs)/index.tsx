@@ -1,5 +1,5 @@
 import { View, Text, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native'
-import { useState, useEffect, useCallback, useLayoutEffect } from 'react'
+import { useState, useCallback, useLayoutEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -106,13 +106,13 @@ export default function HomeScreen() {
                     marketOpen ? 'bg-[#22C55E]' : 'bg-[#EF4444]'
                   }`}
                 />
-                <Text
-                  className={`text-[11px] font-medium ${
-                    marketOpen ? 'text-[#22C55E]' : 'text-[#EF4444]'
-                  }`}
-                >
-                  {marketOpen ? 'Market Open' : 'Market Closed'}
-                </Text>
+                  <Text
+                    className={`text-[11px] font-medium ${
+                      marketOpen ? 'text-[#22C55E]' : 'text-[#EF4444]'
+                    }`}
+                  >
+                    {marketOpen ? 'Market Open' : 'Crypto Weekend'}
+                  </Text>
               </View>
 
               <Pressable className="relative">
