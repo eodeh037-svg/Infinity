@@ -170,6 +170,10 @@ export default function PairDetailScreen() {
 
   async function handleSaveTrade() {
     if (!signalResult || !pair) return
+    if (signalResult.signal === 'HOLD' || signalResult.entry === null) {
+      Alert.alert('No Trade', 'This is a HOLD signal — no entry, stop loss, or take profit available.')
+      return
+    }
 
     try {
       await saveTrade({
@@ -624,7 +628,19 @@ export default function PairDetailScreen() {
                   </View>
                 )}
 
-                {signalResult && (
+                {signalResult && (signalResult.signal === 'HOLD' || signalResult.entry === null ? (
+                  <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
+                    <Text className="mb-2 text-[12px] font-semibold text-[#F59E0B]">
+                      MARKET ON HOLD
+                    </Text>
+                    <Text className="text-[13px] text-white">
+                      No entry / stop loss / take profit — market conditions are not clear.
+                    </Text>
+                    <Text className="mt-1 text-[12px] text-[#F59E0B]">
+                      Try generating a new signal in ~20 minutes.
+                    </Text>
+                  </View>
+                ) : (
                   <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
                     <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
                       TRADE LEVELS
@@ -632,9 +648,9 @@ export default function PairDetailScreen() {
                     <View className="flex-row justify-between">
                       <View>
                         <Text className="text-[10px] text-[#64646E]">Entry</Text>
-                        <Pressable onPress={async () => { await Clipboard.setStringAsync(formatPrice(signalResult.entry)); Alert.alert('Copied', `Entry ${formatPrice(signalResult.entry)} copied`); }}>
+                        <Pressable onPress={async () => { await Clipboard.setStringAsync(formatPrice(signalResult.entry ?? 0)); Alert.alert('Copied', `Entry ${formatPrice(signalResult.entry ?? 0)} copied`); }}>
                           <View className="flex-row items-center gap-1.5">
-                            <Text className="text-[15px] font-medium text-white">{formatPrice(signalResult.entry)}</Text>
+                            <Text className="text-[15px] font-medium text-white">{formatPrice(signalResult.entry ?? 0)}</Text>
                             <Ionicons name="copy-outline" size={12} color="#64646E" />
                           </View>
                         </Pressable>
@@ -665,7 +681,7 @@ export default function PairDetailScreen() {
                       </View>
                     </View>
 
-                    {acc > 0 && signalResult.stopLoss && (
+                    {acc > 0 && signalResult.stopLoss && signalResult.entry !== null && (
                       <View className="mt-3 border-t border-[#1C1C2E] pt-3">
                         <View className="flex-row justify-between">
                           <Text className="text-[11px] text-[#64646E]">Suggested Lot Size</Text>
@@ -681,7 +697,7 @@ export default function PairDetailScreen() {
                       </View>
                     )}
                   </View>
-                )}
+                ))}
 
                 <View className="mb-6 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
                   <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
@@ -695,14 +711,16 @@ export default function PairDetailScreen() {
                   ))}
                 </View>
 
-                <Pressable
-                  onPress={handleSaveTrade}
-                  className="items-center rounded-xl bg-[#8B5CF6] py-4"
-                >
-                  <Text className="text-[16px] font-semibold text-white">
-                    Take This Trade
-                  </Text>
-                </Pressable>
+                {signalResult && signalResult.signal !== 'HOLD' && (
+                  <Pressable
+                    onPress={handleSaveTrade}
+                    className="items-center rounded-xl bg-[#8B5CF6] py-4"
+                  >
+                    <Text className="text-[16px] font-semibold text-white">
+                      Take This Trade
+                    </Text>
+                  </Pressable>
+                )}
 
                 <Pressable onPress={handleCloseModal} className="mt-3 items-center py-3">
                   <Text className="text-[14px] text-[#64646E]">Close</Text>
