@@ -1,26 +1,26 @@
-export type { Candle } from '../indicators/types'
-import type { Candle } from '../indicators/types'
-import { calculateEMA } from '../indicators/ema'
-import { calculateRSI } from '../indicators/rsi'
-import { calculateMACD } from '../indicators/macd'
-import { calculateATR } from '../indicators/atr'
-import { calculateADX } from '../indicators/adx'
-import { calculateBollinger, detectBollingerSqueeze } from '../indicators/bollinger'
-import { calculateStochastic } from '../indicators/stochastic'
-import { calculateIchimoku, getCloudAtCandle } from '../indicators/ichimoku'
-import { calculateWilliamsR } from '../indicators/williamsR'
-import { calculateOBV, analyzeOBV } from '../indicators/obv'
-import { calculateVWAP, analyzeVWAP } from '../indicators/vwap'
-import { calculateFearGreed, analyzeSentimentImpact } from '../indicators/fearGreed'
-import { calculateSupertrend } from '../indicators/supertrend'
-import { calculateFundingRate } from '../indicators/fundingRate'
-import { calculateMVRV } from '../indicators/mvrv'
-import { calculateFisherTransform, analyzeFisher } from '../indicators/fisherTransform'
-import { calculateCMO, analyzeCMO } from '../indicators/cmo'
-import { calculateKeltner, analyzeKeltner } from '../indicators/keltner'
-import { calculateParabolicSAR, analyzeSAR } from '../indicators/parabolicSAR'
-import { calculateStochasticRSI, analyzeStochasticRSI } from '../indicators/stochasticRSI'
-import { calculateATRPercentile, analyzeATRPercentileSignal } from '../indicators/atrPercentile'
+export type { Candle } from '../../lib/indicators/types'
+import type { Candle } from '../../lib/indicators/types'
+import { calculateEMA } from '../../lib/indicators/ema'
+import { calculateRSI } from '../../lib/indicators/rsi'
+import { calculateMACD } from '../../lib/indicators/macd'
+import { calculateATR } from '../../lib/indicators/atr'
+import { calculateADX } from '../../lib/indicators/adx'
+import { calculateBollinger, detectBollingerSqueeze } from '../../lib/indicators/bollinger'
+import { calculateStochastic } from '../../lib/indicators/stochastic'
+import { calculateIchimoku, getCloudAtCandle } from '../../lib/indicators/ichimoku'
+import { calculateWilliamsR } from '../../lib/indicators/williamsR'
+import { calculateOBV, analyzeOBV } from '../../lib/indicators/obv'
+import { calculateVWAP, analyzeVWAP } from '../../lib/indicators/vwap'
+import { calculateFearGreed, analyzeSentimentImpact } from '../../lib/indicators/fearGreed'
+import { calculateSupertrend } from '../../lib/indicators/supertrend'
+import { calculateFundingRate } from '../../lib/indicators/fundingRate'
+import { calculateMVRV } from '../../lib/indicators/mvrv'
+import { calculateFisherTransform, analyzeFisher } from '../../lib/indicators/fisherTransform'
+import { calculateCMO, analyzeCMO } from '../../lib/indicators/cmo'
+import { calculateKeltner, analyzeKeltner } from '../../lib/indicators/keltner'
+import { calculateParabolicSAR, analyzeSAR } from '../../lib/indicators/parabolicSAR'
+import { calculateStochasticRSI, analyzeStochasticRSI } from '../../lib/indicators/stochasticRSI'
+import { calculateATRPercentile, analyzeATRPercentileSignal } from '../../lib/indicators/atrPercentile'
 
 export const SIGNAL_ENGINE_VERSION = 'v2'
 
@@ -234,7 +234,7 @@ export function generateSignal(
   const supertrendLast =
     supertrendData[lastIndex] ?? {
       supertrend: null,
-      direction: null as 'UP' | 'DOWN' | null,
+      direction: 'DOWN' as 'UP' | 'DOWN' | null,
     }
 
   const fundingData = calculateFundingRate(candles)
@@ -1185,6 +1185,14 @@ export function generateSignal(
     }
   }
 
+  if (keltnerAnalysis.squeeze) {
+    addBuy(
+      1,
+      'Keltner Channel squeeze — breakout imminent',
+      'volatility'
+    )
+  }
+
   if (
     !keltnerAnalysis.squeeze &&
     keltnerAnalysis.aboveUpper
@@ -1252,12 +1260,16 @@ export function generateSignal(
   }
 
   if (atrPercentileData.regime === 'low') {
-    buyReasons.push(
-      `ATR at ${atrPercentileData.percentile.toFixed(0)}th percentile — low volatility context`
+    addBuy(
+      1,
+      `ATR at ${atrPercentileData.percentile.toFixed(0)}th percentile — low volatility breakout setup`,
+      'volatility'
     )
   } else if (atrPercentileData.regime === 'high') {
-    sellReasons.push(
-      `ATR at ${atrPercentileData.percentile.toFixed(0)}th percentile — high volatility caution`
+    addSell(
+      1,
+      `ATR at ${atrPercentileData.percentile.toFixed(0)}th percentile — high volatility, risk of reversal`,
+      'volatility'
     )
   }
 
@@ -2681,8 +2693,7 @@ export function calculateConfidence(
 
   if (
     fisherStrength !== null &&
-    fisherStrength > 0.5 &&
-    fisherSignal === signal
+    fisherStrength > 0.5
   ) {
     confidence += 2
   }
@@ -2699,7 +2710,7 @@ export function calculateConfidence(
     confidence += 1
   }
 
-  void keltnerSqueeze
+  if (keltnerSqueeze) confidence += 1
 
   if (
     sarSignal === 'BUY' &&
