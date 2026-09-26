@@ -220,6 +220,10 @@ export default function GenerateScreen() {
 
     const resultToSave = signalResult
     if (!resultToSave) return
+    if (resultToSave.signal === 'HOLD' || resultToSave.entry === null) {
+      Alert.alert('No Trade', 'This is a HOLD signal — no entry, stop loss, or take profit available.')
+      return
+    }
 
     try {
       await saveTrade({
@@ -615,7 +619,19 @@ export default function GenerateScreen() {
                   </View>
                 )}
 
-                {signalResult && (
+                {signalResult && (signalResult.signal === 'HOLD' || signalResult.entry === null ? (
+                  <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
+                    <Text className="mb-2 text-[12px] font-semibold text-[#F59E0B]">
+                      MARKET ON HOLD
+                    </Text>
+                    <Text className="text-[13px] text-white">
+                      No entry / stop loss / take profit — market conditions are not clear.
+                    </Text>
+                    <Text className="mt-1 text-[12px] text-[#F59E0B]">
+                      Try generating a new signal in ~20 minutes.
+                    </Text>
+                  </View>
+                ) : (
                   <View className="mb-4 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
                     <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
                       TRADE LEVELS
@@ -623,9 +639,9 @@ export default function GenerateScreen() {
                     <View className="flex-row justify-between">
                       <View>
                         <Text className="text-[10px] text-[#64646E]">Entry</Text>
-                        <Pressable onPress={() => handleCopyValue(formatPrice(signalResult.entry))} className="flex-row items-center gap-1.5">
+                        <Pressable onPress={() => handleCopyValue(formatPrice(signalResult.entry ?? 0))} className="flex-row items-center gap-1.5">
                           <Text className="text-[15px] font-medium text-white">
-                            {formatPrice(signalResult.entry)}
+                            {formatPrice(signalResult.entry ?? 0)}
                           </Text>
                           <Ionicons name="copy-outline" size={12} color="#64646E" />
                         </Pressable>
@@ -659,7 +675,7 @@ export default function GenerateScreen() {
                       </View>
                     </View>
 
-                    {accountSize && signalResult.stopLoss ? (
+                    {accountSize && signalResult.stopLoss && signalResult.entry !== null ? (
                       <View className="mt-3 border-t border-[#1C1C2E] pt-3">
                         <View className="flex-row justify-between">
                           <Text className="text-[11px] text-[#64646E]">Suggested Lot Size</Text>
@@ -677,7 +693,7 @@ export default function GenerateScreen() {
                       </View>
                     ) : null}
                   </View>
-                )}
+                ))}
 
                 <View className="mb-6 rounded-xl border border-[#1C1C2E] bg-[#0D0D14] p-4">
                   <Text className="mb-2 text-[12px] font-semibold text-[#64646E]">
@@ -691,14 +707,16 @@ export default function GenerateScreen() {
                   ))}
                 </View>
 
-                <Pressable
-                  onPress={handleSaveTrade}
-                  className="items-center rounded-xl bg-[#8B5CF6] py-4"
-                >
-                  <Text className="text-[16px] font-semibold text-white">
-                    Take This Trade
-                  </Text>
-                </Pressable>
+                {signalResult && signalResult.signal !== 'HOLD' && (
+                  <Pressable
+                    onPress={handleSaveTrade}
+                    className="items-center rounded-xl bg-[#8B5CF6] py-4"
+                  >
+                    <Text className="text-[16px] font-semibold text-white">
+                      Take This Trade
+                    </Text>
+                  </Pressable>
+                )}
 
                 <Pressable
                   onPress={() => setShowSignalModal(false)}
