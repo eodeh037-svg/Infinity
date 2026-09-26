@@ -1,13 +1,17 @@
 import '../global.css';
 
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
-import { StatusBar, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import { StatusBar } from 'expo-status-bar';
 import { auth } from '../lib/firebaseConfig';
+import { ThemeProvider, useTheme } from '../lib/theme';
+import { UserProvider } from '../lib/firebase/userProvider';
 
-export default function Layout() {
+function RootNavigator() {
+  const { colors } = useTheme();
   const router = useRouter();
   const segments = useSegments();
   const navigationState = useRootNavigationState();
@@ -37,22 +41,27 @@ export default function Layout() {
   }, [user, initializing, segments, navigationState?.key, router]);
 
   if (initializing) {
-    return (
-      <SafeAreaProvider>
-        <StatusBar barStyle="light-content" />
-        <View style={{ flex: 1, backgroundColor: '#000005' }} />
-      </SafeAreaProvider>
-    );
+    return <View style={{ flex: 1, backgroundColor: colors.background }} />;
   }
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" />
+      <StatusBar style="light" />
       <Stack initialRouteName="(onboarding)" screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
       </Stack>
     </SafeAreaProvider>
+  );
+}
+
+export default function Layout() {
+  return (
+    <ThemeProvider>
+      <UserProvider>
+        <RootNavigator />
+      </UserProvider>
+    </ThemeProvider>
   );
 }

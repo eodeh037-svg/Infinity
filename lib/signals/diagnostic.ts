@@ -140,7 +140,7 @@ export function collectFeatures(
       holds++
       continue
     }
-    if (result.stopLoss === null || result.takeProfit === null) {
+    if (result.entry === null || result.stopLoss === null || result.takeProfit === null) {
       nullLevels++
       continue
     }

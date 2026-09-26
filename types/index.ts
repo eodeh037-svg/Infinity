@@ -39,6 +39,13 @@ export type UserProfile = {
   userName: string
   email: string
   plan: 'free' | 'premium'
+  premium?: {
+    active?: boolean
+    plan?: string | null
+    activatedAt?: any
+    expiresAt?: any
+    paymentId?: string | null
+  } | null
   accountBalance: number
   totalPL: number
   totalPLPercent: number

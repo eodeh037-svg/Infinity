@@ -1,14 +1,69 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId;
-      allow list: if request.auth != null;
+      allow read: if request.auth != null
+        && request.auth.uid == userId;
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.userId == request.auth.uid;
+
+      
+      
+      allow update: if request.auth != null
+        && request.auth.uid == userId;
+
+      allow delete: if false;
     }
+
+    match /usernames/{username} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+
+      allow update: if false;
+
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+    }
+
     match /trades/{tradeId} {
-      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+
+      
+      
+      
+      
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && resource.data.status == 'open'
+        && request.resource.data.status == 'closed'
+        && request.resource.data.pair == resource.data.pair
+        && request.resource.data.signal == resource.data.signal
+        && request.resource.data.entry == resource.data.entry;
+
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+    }
+
+    match /payments/{paymentId} {
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      allow update, delete: if false;
     }
   }
 }

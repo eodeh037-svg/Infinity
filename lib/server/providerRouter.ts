@@ -1,4 +1,5 @@
 import { MarketCandle, QuoteData, Timeframe, ServerCandleProvider } from './providers/types'
+import { normalizeProviderCandles } from './providers/normalizeTimestamps'
 import { PROVIDER_CONFIG } from './providerConfig'
 import { cacheGet, cacheSet, makeCandleKey, makeQuoteKey } from './cache'
 import { coalesceRequest } from './coalesce'
@@ -227,42 +228,62 @@ export async function fetchCandles(
         const latency = Date.now() - start
 
         if (candles && candles.length > 0) {
-          let newCount = 0
-          for (const candle of candles) {
-            if (!mergedCandles.has(candle.time)) {
-              mergedCandles.set(candle.time, candle)
-              newCount++
-            }
+          const normalized = normalizeProviderCandles(candles, provider.name)
+          if (normalized.rejected > 0) {
+            console.warn(
+              `${TAG} ⚠️ ${dName} → ${normalized.rejected}/${candles.length} candles rejected (implausible timestamps)`
+            )
+            diagnostics.push(
+              `${provider.name}: rejected ${normalized.rejected} candles with implausible timestamps`
+            )
           }
+          const usable = normalized.candles
 
-          recordProviderRequest(provider.name, latency, true)
-          recordSuccess(provider.name)
-          metrics.requests.providerCalls++
-
-          if (newCount > 0) {
-            providersUsed.push(provider.name)
-            providerCandleCounts.set(provider.name, newCount)
-
-            if (lastFailedProvider) {
-              console.log(`${TAG} 🔄 Fallback: ${displayName(lastFailedProvider)} → ${dName}`)
-            }
-
-            if (newCount < candles.length) {
-              console.log(`${TAG} ⚠️ ${dName} returned ${candles.length} candles, ${newCount} new for ${symbol} ${timeframe}`)
-              console.log(`${TAG}    ${dName} → filled ${newCount} missing candles`)
-              console.log(`${TAG}    Coverage: ${mergedCandles.size}/${limit}`)
-            } else {
-              console.log(`${TAG} ✅ ${dName} → ${candles.length}/${limit}`)
-              console.log(`${TAG}    ${symbol} ${timeframe}`)
-            }
+          if (usable.length === 0) {
+            recordProviderRequest(provider.name, latency, false)
+            recordFailure(provider.name)
+            console.log(`${TAG} ❌ ${dName} failed for ${symbol} ${timeframe}`)
+            console.log(`${TAG}    Reason: all ${candles.length} candles had implausible timestamps`)
+            lastFailedProvider = provider.name
+            diagnostics.push(`${provider.name}: all candles had implausible timestamps (${latency}ms)`)
           } else {
-            console.log(`${TAG} ⚠️ ${dName} returned ${candles.length} candles, all duplicates for ${symbol} ${timeframe}`)
-          }
+            let newCount = 0
+            for (const candle of usable) {
+              if (!mergedCandles.has(candle.time)) {
+                mergedCandles.set(candle.time, candle)
+                newCount++
+              }
+            }
 
-          diagnostics.push(`${provider.name}: ${candles.length} candles, ${newCount} new (${latency}ms)`)
+            recordProviderRequest(provider.name, latency, true)
+            recordSuccess(provider.name)
+            metrics.requests.providerCalls++
 
-          if (mergedCandles.size >= limit) {
-            break
+            if (newCount > 0) {
+              providersUsed.push(provider.name)
+              providerCandleCounts.set(provider.name, newCount)
+
+              if (lastFailedProvider) {
+                console.log(`${TAG} 🔄 Fallback: ${displayName(lastFailedProvider)} → ${dName}`)
+              }
+
+              if (newCount < candles.length) {
+                console.log(`${TAG} ⚠️ ${dName} returned ${candles.length} candles, ${newCount} new for ${symbol} ${timeframe}`)
+                console.log(`${TAG}    ${dName} → filled ${newCount} missing candles`)
+                console.log(`${TAG}    Coverage: ${mergedCandles.size}/${limit}`)
+              } else {
+                console.log(`${TAG} ✅ ${dName} → ${candles.length}/${limit}`)
+                console.log(`${TAG}    ${symbol} ${timeframe}`)
+              }
+            } else {
+              console.log(`${TAG} ⚠️ ${dName} returned ${candles.length} candles, all duplicates for ${symbol} ${timeframe}`)
+            }
+
+            diagnostics.push(`${provider.name}: ${usable.length} candles, ${newCount} new (${latency}ms)`)
+
+            if (mergedCandles.size >= limit) {
+              break
+            }
           }
         } else {
           recordProviderRequest(provider.name, latency, false)

@@ -33,7 +33,7 @@ export function calculateMACD(
     }
   }
 
-  // Extract valid MACD values for signal EMA
+  
   const validMACD: number[] = []
 
   for (const value of macdValues) {

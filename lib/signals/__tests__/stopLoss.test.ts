@@ -66,7 +66,7 @@ describe('selectStopLossLevel — side invariants', () => {
   it('Very low volatility → stop is strictly on the valid side and not an epsilon clamp', () => {
     const atr = 0.002;
     const recentLow = entry - 0.01;
-    const ema50 = entry + atr; // emaStop = entry (invalid: not strictly below entry)
+    const ema50 = entry + atr;
     const sl = selectStopLossLevel('BUY', entry, atr, ema50, recentLow, entry + 0.01);
     expect(sl).toBeLessThan(entry);
     expect(entry - sl).toBeGreaterThanOrEqual(atr * ATR_SL_MULTIPLIER);
@@ -75,7 +75,7 @@ describe('selectStopLossLevel — side invariants', () => {
   it('Very high volatility → stop strictly on the valid side with wide distance', () => {
     const atr = 20;
     const recentLow = 60;
-    const ema50 = 120; // emaStop = 110 → invalid for BUY
+    const ema50 = 120; 
     const sl = selectStopLossLevel('BUY', entry, atr, ema50, recentLow, 130);
     expect(sl).toBeLessThan(entry);
     expect(entry - sl).toBeGreaterThanOrEqual(atr * ATR_SL_MULTIPLIER);
@@ -83,8 +83,8 @@ describe('selectStopLossLevel — side invariants', () => {
 
   it('No usable structural or EMA stop candidate → ATR volatility fallback stays valid (BUY)', () => {
     const atr = 1;
-    const recentLow = entry + 10 * atr; // structuralStop above entry → invalid
-    const ema50 = entry + 2 * atr; // emaStop above entry → invalid
+    const recentLow = entry + 10 * atr; 
+    const ema50 = entry + 2 * atr; 
     const sl = selectStopLossLevel('BUY', entry, atr, ema50, recentLow, entry + 12 * atr);
     expect(sl).toBeLessThan(entry);
     expect(sl).toBeCloseTo(entry - atr * ATR_SL_MULTIPLIER, 10);
@@ -93,8 +93,8 @@ describe('selectStopLossLevel — side invariants', () => {
 
   it('No usable structural or EMA stop candidate → ATR volatility fallback stays valid (SELL)', () => {
     const atr = 1;
-    const recentHigh = entry - 10 * atr; // structuralStop below entry → invalid
-    const ema50 = entry - 2 * atr; // emaStop below entry → invalid
+    const recentHigh = entry - 10 * atr; 
+    const ema50 = entry - 2 * atr; 
     const sl = selectStopLossLevel('SELL', entry, atr, ema50, entry - 12 * atr, recentHigh);
     expect(sl).toBeGreaterThan(entry);
     expect(sl).toBeCloseTo(entry + atr * ATR_SL_MULTIPLIER, 10);
@@ -103,8 +103,8 @@ describe('selectStopLossLevel — side invariants', () => {
 
   it('ATR cap preserved: extreme single candidate never overshoots entry ± 3 ATR', () => {
     const atr = 10;
-    const recentLow = entry - 100; // far below → structural valid
-    const ema50 = entry - 50; // far below → valid
+    const recentLow = entry - 100; 
+    const ema50 = entry - 50; 
     const sl = selectStopLossLevel('BUY', entry, atr, ema50, recentLow, entry + 100);
     expect(sl).toBeGreaterThanOrEqual(entry - atr * 3);
     expect(sl).toBeLessThan(entry);
@@ -176,7 +176,7 @@ describe('generateSignal — end-to-end SL/TP side invariants', () => {
 
     for (let i = 300; i < candles.length - 1; i += 3) {
       const r = generateSignal(candles.slice(0, i + 1), 0);
-      if (r.stopLoss === null || r.takeProfit === null) continue;
+      if (r.entry === null || r.stopLoss === null || r.takeProfit === null) continue;
       const entry = r.entry;
       const atr = atrs[i];
       const ema50 = ema50s[i];
@@ -218,7 +218,8 @@ describe('generateSignal — end-to-end SL/TP side invariants', () => {
     for (let i = 300; i < candles.length - 1; i += 3) {
       const slice = candles.slice(0, i + 1);
       const r = generateSignal(slice, 0);
-      if (r.signal !== 'BUY' || r.stopLoss === null) continue;
+      if (r.entry === null || r.signal !== 'BUY' || r.stopLoss === null || r.takeProfit === null)
+        continue;
       const ema50 = ema50s[i];
       const atr = atrs[i];
       if (ema50 === null || atr === null) continue;

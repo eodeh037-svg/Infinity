@@ -16,6 +16,7 @@ npm-debug.*
 *.p12
 *.key
 *.mobileprovision
+google-services.json
 
 # Expo Router
 expo-env.d.ts

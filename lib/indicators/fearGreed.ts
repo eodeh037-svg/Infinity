@@ -34,32 +34,32 @@ export function calculateFearGreed(
     }
   }
 
-  // Volatility Score: higher volatility = more fear
+  
   const avgATR = recentATR.reduce((a, b) => a + (b || 0), 0) / recentATR.length
   const currentATR = recentATR[recentATR.length - 1] || 0
   const avgClose = recentCloses.reduce((a, b) => a + b, 0) / recentCloses.length
   const volatilityRatio = avgClose > 0 ? (avgATR / avgClose) * 100 : 0
   const volatilityScore = Math.min(100, Math.max(0, 50 + (volatilityRatio - 2) * 10))
 
-  // Momentum Score: price direction and strength
+  
   const priceChange = recentCloses[recentCloses.length - 1] - recentCloses[0]
   const priceChangePercent = avgClose > 0 ? (priceChange / recentCloses[0]) * 100 : 0
   const momentumScore = Math.min(100, Math.max(0, 50 + priceChangePercent * 2))
 
-  // Volume Score: higher volume = more conviction
+  
   const avgVolume = recentVolumes.reduce((a, b) => a + (b || 0), 0) / recentVolumes.length
   const currentVolume = recentVolumes[recentVolumes.length - 1] || 0
   const volumeRatio = avgVolume > 0 ? currentVolume / avgVolume : 1
   const volumeScore = Math.min(100, Math.max(0, 50 + (volumeRatio - 1) * 50))
 
-  // RSI Score: extreme RSI = fear/greed
+  
   const validRSI = recentRSI.filter((r): r is number => r !== null)
   const avgRSI = validRSI.length > 0
     ? validRSI.reduce((a, b) => a + b, 0) / validRSI.length
     : 50
   const rsiScore = Math.min(100, Math.max(0, avgRSI))
 
-  // Composite Fear & Greed Index
+  
   const fearGreedIndex = Math.round(
     volatilityScore * 0.25 +
     momentumScore * 0.25 +
@@ -68,7 +68,7 @@ export function calculateFearGreed(
     50 * 0.15
   )
 
-  // Sentiment label
+  
   let sentiment: SentimentScore['sentiment']
   if (fearGreedIndex < 20) sentiment = 'Extreme Fear'
   else if (fearGreedIndex < 40) sentiment = 'Fear'

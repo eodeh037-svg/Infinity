@@ -37,7 +37,7 @@ export function calculateATR(
     trueRanges.push(trueRange)
   }
 
-  // Initial ATR = SMA of first `period` TR values
+  
   let atr = 0
 
   for (let i = 1; i <= period; i++) {
@@ -48,7 +48,7 @@ export function calculateATR(
 
   result[period] = atr
 
-  // Wilder smoothing
+  
   for (let i = period + 1; i < candles.length; i++) {
     atr =
       ((atr * (period - 1)) + trueRanges[i]) /

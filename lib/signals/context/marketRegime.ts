@@ -23,8 +23,16 @@ export function detectTrendRegime(result: SignalResult): TrendRegimeResult {
     }
   }
 
-  // EMA alignment
-  if (entry > ema20 && ema20 > ema50) {
+  
+  if (entry === null) {
+    if (ema20 > ema50) {
+      bullishPoints += 1
+      evidence.push('EMA alignment bullish (EMA20 > EMA50)')
+    } else if (ema20 < ema50) {
+      bearishPoints += 1
+      evidence.push('EMA alignment bearish (EMA20 < EMA50)')
+    }
+  } else if (entry > ema20 && ema20 > ema50) {
     bullishPoints += 2
     evidence.push('EMA alignment bullish (price > EMA20 > EMA50)')
   } else if (entry < ema20 && ema20 < ema50) {
@@ -38,7 +46,7 @@ export function detectTrendRegime(result: SignalResult): TrendRegimeResult {
     evidence.push('Price below EMA50')
   }
 
-  // ADX directional consensus
+  
   if (adx !== null && plusDI !== null && minusDI !== null) {
     if (adx >= 25) {
       if (plusDI > minusDI) {
@@ -51,7 +59,7 @@ export function detectTrendRegime(result: SignalResult): TrendRegimeResult {
     }
   }
 
-  // Supertrend
+  
   if (supertrendDir === 'UP') {
     bullishPoints += 1
     evidence.push('Supertrend remains bullish')
@@ -60,7 +68,7 @@ export function detectTrendRegime(result: SignalResult): TrendRegimeResult {
     evidence.push('Supertrend remains bearish')
   }
 
-  // RSI position as secondary confirmation
+  
   if (result.rsi !== null) {
     if (result.rsi > 55) {
       bullishPoints += 1
@@ -71,7 +79,7 @@ export function detectTrendRegime(result: SignalResult): TrendRegimeResult {
     }
   }
 
-  // Classify regime
+  
   const netPoints = bullishPoints - bearishPoints
   const totalPoints = bullishPoints + bearishPoints
 

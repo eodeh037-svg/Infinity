@@ -15,7 +15,9 @@ export interface StrategyProfile {
   label: string
   description: string
   timeframes: TimeframeWeight[]
+  primaryTimeframe: Timeframe
   minTimeframesRequired: number
+  holdPeriodHours: number
   holdThresholds: {
     minAgreement: number
     maxDisagreement: number
@@ -34,7 +36,9 @@ export const STRATEGY_PROFILES: Record<StrategyKey, StrategyProfile> = {
       { timeframe: '4h', weight: 0.30, label: '4H', role: 'intermediate trend' },
       { timeframe: '1day', weight: 0.30, label: '1D', role: 'higher-timeframe context' },
     ],
+    primaryTimeframe: '4h',
     minTimeframesRequired: 2,
+    holdPeriodHours: 72,
     holdThresholds: {
       minAgreement: 0.55,
       maxDisagreement: 0.40,
@@ -56,7 +60,9 @@ export const STRATEGY_PROFILES: Record<StrategyKey, StrategyProfile> = {
       { timeframe: '5min', weight: 0.35, label: '5M', role: 'micro momentum' },
       { timeframe: '15min', weight: 0.40, label: '15M', role: 'short-term trend' },
     ],
+    primaryTimeframe: '5min',
     minTimeframesRequired: 2,
+    holdPeriodHours: 6,
     holdThresholds: {
       minAgreement: 0.60,
       maxDisagreement: 0.35,
@@ -78,7 +84,9 @@ export const STRATEGY_PROFILES: Record<StrategyKey, StrategyProfile> = {
       { timeframe: '15min', weight: 0.30, label: '15M', role: 'intraday structure' },
       { timeframe: '1h', weight: 0.50, label: '1H', role: 'intraday trend' },
     ],
+    primaryTimeframe: '1h',
     minTimeframesRequired: 2,
+    holdPeriodHours: 24,
     holdThresholds: {
       minAgreement: 0.55,
       maxDisagreement: 0.40,
@@ -100,7 +108,9 @@ export const STRATEGY_PROFILES: Record<StrategyKey, StrategyProfile> = {
       { timeframe: '4h', weight: 0.35, label: '4H', role: 'intermediate trend' },
       { timeframe: '1day', weight: 0.45, label: '1D', role: 'higher-timeframe trend' },
     ],
+    primaryTimeframe: '1day',
     minTimeframesRequired: 2,
+    holdPeriodHours: 168,
     holdThresholds: {
       minAgreement: 0.55,
       maxDisagreement: 0.40,
@@ -122,7 +132,9 @@ export const STRATEGY_PROFILES: Record<StrategyKey, StrategyProfile> = {
       { timeframe: '1day', weight: 0.40, label: '1D', role: 'primary trend' },
       { timeframe: '1week', weight: 0.40, label: '1W', role: 'long-term context' },
     ],
+    primaryTimeframe: '1day',
     minTimeframesRequired: 2,
+    holdPeriodHours: 720,
     holdThresholds: {
       minAgreement: 0.50,
       maxDisagreement: 0.45,
@@ -145,4 +157,29 @@ export function getStrategy(key: StrategyKey): StrategyProfile {
 
 export function getStrategyTimeframes(key: StrategyKey): Timeframe[] {
   return getStrategy(key).timeframes.map(tf => tf.timeframe)
+}
+
+export function resolutionHorizonHours(key: StrategyKey): number {
+  return getStrategy(key).holdPeriodHours
+}
+
+
+export function resolvePrimaryTimeframe(
+  key: StrategyKey,
+  availableTimeframes: Record<Timeframe, unknown[] | undefined>
+): { timeframe: Timeframe; usedFallback: boolean } {
+  const strategy = getStrategy(key)
+  const withData = strategy.timeframes.filter(tf => (availableTimeframes[tf.timeframe]?.length ?? 0) > 0)
+
+  const primary = withData.find(tf => tf.timeframe === strategy.primaryTimeframe)
+  if (primary) {
+    return { timeframe: primary.timeframe, usedFallback: false }
+  }
+
+  if (withData.length > 0) {
+    const highestWeight = [...withData].sort((a, b) => b.weight - a.weight)[0]
+    return { timeframe: highestWeight.timeframe, usedFallback: true }
+  }
+
+  return { timeframe: strategy.primaryTimeframe, usedFallback: true }
 }
