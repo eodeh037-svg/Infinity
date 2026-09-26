@@ -1,28 +1,4 @@
-/**
- * TEMPORARY ANALYSIS HARNESS — before/after comparison of the engine correctness fixes.
- *
- * PURPOSE
- * The working-tree signal engine already contains the 8 correctness fixes (supertrend
- * fallback neutrality, Keltner squeeze score removal, ATR regime heading-score removal,
- * direction-aware Fisher confidence, unconditional-Keltner confidence removal, kept ATR
- * regime confidence adjustment, direction-aware + new retry wording). BEFORE is the
- * SAME working-tree engine with ONLY those five buggy behaviours re-introduced
- * (`analysis/legacy/engineBuggyBefore.ts`: supertrend fallback DOWN, Keltner squeeze
- * addBuy(1), ATR low addBuy(1)/high addSell(1), unconditional Fisher confidence +2,
- * unconditional Keltner-squeeze confidence +1). AFTER is the current production engine.
- *
- * Modes
- *  - 'before':  working-tree engine with the five buggy behaviours re-introduced (isolation copy).
- *  - 'after':   current production engine (all fixes applied).
- *
- * Everything else is IDENTICAL in both modes: cached dataset, per-strategy primary
- * timeframe, causal windows (LOOKBACK..len-1-horizonCandles, step 7), horizon resolution
- * (resolutionHorizonHours + estimateCandleStepMs + resolveHorizonCandles), costs
- * (roundTripCostPrice), and measurement (simulateTrade: MFE/MAE, reach 1R/1.5R/2R/TP,
- * same-bar SL+TP = LOSS). Do NOT edit production code or the dataset.
- *
- * ANALYSIS ONLY — not part of the product. Run: npx tsx analysis/engineBeforeAfter.ts
- */
+
 
 import fs from 'fs'
 
@@ -184,7 +160,7 @@ function computeRun(mode: Mode): ModeRun {
         const res = genSignalFor(mode, window)
         run.signals[res.signal ?? 'HOLD']++
         if (res.signal !== 'HOLD') {
-          // count produced-but-unmeasurable HOLD as hold for expectancy denominators
+          
           measureSignal(run, series, i, res, pair, strategy, horizonCandles, costPrice)
         } else {
           run.holds++

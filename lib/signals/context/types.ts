@@ -1,6 +1,6 @@
 import { Signal } from '../signalEngine'
 
-// ─── Trend Regime ───────────────────────────────────────
+
 
 export type MarketTrendRegime = 'uptrend' | 'downtrend' | 'range' | 'unclear'
 
@@ -13,7 +13,7 @@ export interface TrendRegimeResult {
   coverage: 'full' | 'partial' | 'unavailable'
 }
 
-// ─── Key Levels ─────────────────────────────────────────
+
 
 export type PriceLocation =
   | 'near_support'
@@ -48,7 +48,7 @@ export interface KeyLevelsResult {
   evidence: string[]
 }
 
-// ─── Volatility Regime ──────────────────────────────────
+
 
 export type VolatilityRegime = 'very_low' | 'low' | 'normal' | 'high' | 'extreme'
 
@@ -63,7 +63,7 @@ export interface VolatilityRegimeResult {
   evidence: string[]
 }
 
-// ─── Market Context (composite) ─────────────────────────
+
 
 export interface MarketContext {
   regime: TrendRegimeResult
@@ -74,7 +74,7 @@ export interface MarketContext {
   positioning: null
 }
 
-// ─── Context Assessment ─────────────────────────────────
+
 
 export type ContextAlignment = 'supportive' | 'neutral' | 'conflicting'
 
@@ -90,7 +90,7 @@ export interface ContextAssessment {
   evidence: string[]
 }
 
-// ─── Strategy Context Configuration ─────────────────────
+
 
 export interface ContextConfig {
   regimeWeight: number
@@ -100,7 +100,7 @@ export interface ContextConfig {
   maxAdjustment: number
 }
 
-// ─── Analysis Input ─────────────────────────────────────
+
 
 export interface ContextInput {
   signal: Signal

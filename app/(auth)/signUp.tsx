@@ -1,173 +1,157 @@
-import { Ionicons } from '@expo/vector-icons'
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native'
-import { router } from 'expo-router'
-import { useState } from 'react'
+import { Ionicons } from '@expo/vector-icons';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { useState } from 'react';
 
-import { createAccount } from '../../lib/firebase/authService'
-import { isUsernameTaken } from '../../lib/services/dataService'
+import { createAccount } from '../../lib/firebase/authService';
+import { isUsernameTaken } from '../../lib/services/dataService';
+import { useTheme } from '../../lib/theme';
+import AppButton from '../../component/ui/AppButton';
+import { friendlyAuthError } from '../../component/ui/authErrors';
 
 export default function SignUp() {
-  const [userName, setUserName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { colors } = useTheme();
+  const [userName, setUserName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleCreateAccount = async () => {
     if (!userName || !email || !password || !confirmPassword) {
-      setError('Please fill in all fields.')
-      return
+      setError('Please fill in all fields.');
+      return;
     }
     if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
+      setError('Passwords do not match.');
+      return;
     }
 
-    setError('')
-    setIsSubmitting(true)
+    setError('');
+    setIsSubmitting(true);
 
     try {
-      const taken = await isUsernameTaken(userName)
+      const taken = await isUsernameTaken(userName);
       if (taken) {
-        setError('Username is already taken.')
-        setIsSubmitting(false)
-        return
+        setError('Username is already taken.');
+        setIsSubmitting(false);
+        return;
       }
-      await createAccount(email, password, userName)
-      router.replace('/(tabs)')
+      await createAccount(email, password, userName);
+      router.replace('/(tabs)');
     } catch (caughtError) {
-      console.error(caughtError)
+      console.error(caughtError);
       setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Unable to create your account.'
-      )
+        caughtError instanceof Error ? caughtError.message : 'Unable to create your account.'
+      );
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
-
+  };
 
   return (
-    <ScrollView
-      className="flex-1 bg-[#05050d]"
-      contentContainerClassName="flex-grow justify-center px-6 py-10"
-      keyboardShouldPersistTaps="handled"
-    >
-      <View className="w-full items-center">
-        <Image
-          source={require('../../assets/icon.jpg')}
-          className="mb-7 h-14 w-14 rounded-2xl"
-        />
+    <SafeAreaView className="flex-1 bg-background" edges={['top', 'bottom']}>
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center px-6 py-10"
+        keyboardShouldPersistTaps="handled">
+        <View className="w-full items-center">
+          <View className="mb-6 h-14 w-14 items-center justify-center rounded-2xl bg-accent">
+            <Text className="text-[22px] font-bold text-white">∞</Text>
+          </View>
 
-        <Text className="text-3xl font-bold text-white">
-          Create account
-        </Text>
+          <Text className="text-[26px] font-bold text-foreground">Create account</Text>
 
-        <Text className="mt-2 text-center text-sm text-[#767481]">
-          Start trading with AI-powered signals
-        </Text>
+          <Text className="mt-2 text-center text-[14px] text-muted">
+            Start trading with AI-powered signals
+          </Text>
 
-        <View className="mt-8 w-full gap-3">
-          <TextInput
-            autoCapitalize="words"
-            autoComplete="name"
-            className="h-14 rounded-xl border border-[#28243d] bg-[#0b0919] px-4 text-base text-white"
-            onChangeText={setUserName}
-            placeholder="Username"
-            placeholderTextColor="#666373"
-            value={userName}
-          />
+          <View className="mt-8 w-full gap-3">
+            <TextInput
+              autoCapitalize="words"
+              autoComplete="name"
+              accessibilityLabel="Username"
+              className="h-12 rounded-lg border border-border bg-input px-4 text-[15px] text-foreground"
+              onChangeText={setUserName}
+              placeholder="Username"
+              placeholderTextColor={colors.mutedSoft}
+              value={userName}
+            />
 
-          <TextInput
-            autoCapitalize="none"
-            autoComplete="email"
-            className="h-14 rounded-xl border border-[#28243d] bg-[#0b0919] px-4 text-base text-white"
-            keyboardType="email-address"
-            onChangeText={setEmail}
-            placeholder="Email address"
-            placeholderTextColor="#666373"
-            value={email}
-          />
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="email"
+              accessibilityLabel="Email address"
+              className="h-12 rounded-lg border border-border bg-input px-4 text-[15px] text-foreground"
+              keyboardType="email-address"
+              onChangeText={setEmail}
+              placeholder="Email address"
+              placeholderTextColor={colors.mutedSoft}
+              value={email}
+            />
 
-          <View className="relative">
+            <View className="relative">
+              <TextInput
+                autoCapitalize="none"
+                autoComplete="new-password"
+                accessibilityLabel="Password"
+                className="h-12 rounded-lg border border-border bg-input px-4 pr-12 text-[15px] text-foreground"
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor={colors.mutedSoft}
+                secureTextEntry={!showPassword}
+                value={password}
+              />
+
+              <Pressable
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-4 top-[14px]"
+                onPress={() => setShowPassword((value) => !value)}>
+                <Ionicons
+                  color={colors.mutedSoft}
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                />
+              </Pressable>
+            </View>
+
             <TextInput
               autoCapitalize="none"
               autoComplete="new-password"
-              className="h-14 rounded-xl border border-[#28243d] bg-[#0b0919] px-4 pr-12 text-base text-white"
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor="#666373"
+              accessibilityLabel="Confirm password"
+              className="h-12 rounded-lg border border-border bg-input px-4 text-[15px] text-foreground"
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm password"
+              placeholderTextColor={colors.mutedSoft}
               secureTextEntry={!showPassword}
-              value={password}
+              value={confirmPassword}
             />
 
-            <Pressable
-              className="absolute right-4 top-[18px]"
-              onPress={() => setShowPassword((value) => !value)}
-            >
-              <Ionicons
-                color="#77738a"
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-              />
-            </Pressable>
+            {error ? (
+              <Text className="rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-center text-[13px] text-danger">
+                {friendlyAuthError(error)}
+              </Text>
+            ) : null}
+
+            <AppButton
+              title="Create Account"
+              className="mt-1 w-full"
+              loading={isSubmitting}
+              onPress={handleCreateAccount}
+            />
           </View>
 
-          <TextInput
-            autoCapitalize="none"
-            autoComplete="new-password"
-            className="h-14 rounded-xl border border-[#28243d] bg-[#0b0919] px-4 text-base text-white"
-            onChangeText={setConfirmPassword}
-            placeholder="Confirm password"
-            placeholderTextColor="#666373"
-            secureTextEntry={!showPassword}
-            value={confirmPassword}
-          />
+          <View className="mt-7 flex-row">
+            <Text className="text-[13px] text-muted">Have an account? </Text>
 
-          {error ? (
-            <Text className="text-center text-xs text-[#ff8896]">
-              {error}
-            </Text>
-          ) : null}
-
-          <Pressable
-            className="mt-1 h-14 items-center justify-center rounded-xl bg-[#7a00ff]"
-            disabled={isSubmitting}
-            onPress={handleCreateAccount}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text className="font-semibold text-white">
-                Create Account
-              </Text>
-            )}
-          </Pressable>
+            <Pressable onPress={() => router.push('/(auth)/logIn')}>
+              <Text className="text-[13px] font-medium text-accent">Sign in</Text>
+            </Pressable>
+          </View>
         </View>
-
-        <View className="mt-7 flex-row">
-          <Text className="text-xs text-[#777381]">
-            Have an account?{' '}
-          </Text>
-
-          <Pressable onPress={() => router.push('/(auth)/logIn')}>
-            <Text className="text-xs font-medium text-[#b66cff]">
-              Sign in
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-    </ScrollView>
-  )
+      </ScrollView>
+    </SafeAreaView>
+  );
 }

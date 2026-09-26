@@ -6,7 +6,8 @@
     "scheme": "infinity",
     "platforms": [
       "ios",
-      "android"
+      "android",
+      "web"
     ],
     "web": {
       "bundler": "metro",
@@ -19,7 +20,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/icon.jpg",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#05050d"
         }
       ],
       "expo-font",
@@ -34,7 +35,7 @@
     },
     "orientation": "portrait",
     "icon": "./assets/icon.jpg",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -45,6 +46,14 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.jpg",
         "backgroundColor": "#000000"
+      },
+      "package": "com.odeh.infinity",
+      "googleServicesFile": "./google-services.json"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "10cef199-945b-45ee-8950-72825218fb48"
       }
     }
   }

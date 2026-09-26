@@ -1,17 +1,17 @@
-import { getMetrics } from '../../../lib/server/metrics'
-import { getProviderHealth, getProviderRegistry } from '../../../lib/server/providerRouter'
-import { cacheSize, cacheEvictExpired } from '../../../lib/server/cache'
-import { inFlightSize } from '../../../lib/server/coalesce'
+import { getMetrics } from '../../../lib/server/metrics';
+import { getProviderHealth, getProviderRegistry } from '../../../lib/server/providerRouter';
+import { cacheSize, cacheEvictExpired } from '../../../lib/server/cache';
+import { inFlightSize } from '../../../lib/server/coalesce';
 
 export async function GET(): Promise<Response> {
   try {
-    const evicted = cacheEvictExpired()
-    const registry = getProviderRegistry()
-    const providerHealth = getProviderHealth()
+    const evicted = cacheEvictExpired();
+    const registry = getProviderRegistry();
+    const providerHealth = getProviderHealth();
 
-    const providers: Record<string, any> = {}
+    const providers: Record<string, any> = {};
     for (const entry of registry) {
-      const health = providerHealth[entry.name]
+      const health = providerHealth[entry.name];
       providers[entry.name] = {
         enabled: entry.enabled,
         priority: entry.priority,
@@ -25,7 +25,7 @@ export async function GET(): Promise<Response> {
         isAvailable: health?.isAvailable ?? true,
         entitlementDenied: health?.entitlementDenied ?? false,
         rateLimited: health?.rateLimited ?? false,
-      }
+      };
     }
 
     return Response.json({
@@ -37,8 +37,8 @@ export async function GET(): Promise<Response> {
       inFlight: inFlightSize(),
       metrics: getMetrics(),
       timestamp: Date.now(),
-    })
+    });
   } catch (error) {
-    return Response.json({ error: 'internal server error' }, { status: 500 })
+    return Response.json({ error: 'internal server error' }, { status: 500 });
   }
 }

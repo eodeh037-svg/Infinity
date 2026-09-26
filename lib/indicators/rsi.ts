@@ -16,7 +16,7 @@ export function calculateRSI(
   let gainSum = 0
   let lossSum = 0
 
-  // Calculate initial average gain/loss
+  
   for (let i = 1; i <= period; i++) {
     const change = closes[i] - closes[i - 1]
 
@@ -35,7 +35,7 @@ export function calculateRSI(
     averageLoss
   )
 
-  // Wilder smoothing
+  
   for (let i = period + 1; i < closes.length; i++) {
     const change = closes[i] - closes[i - 1]
 

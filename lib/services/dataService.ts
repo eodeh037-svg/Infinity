@@ -11,8 +11,6 @@ import {
   deleteDoc,
   query,
   where,
-  orderBy,
-  limit,
   serverTimestamp,
 } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
@@ -133,26 +131,44 @@ export function getCurrentUserEmail(): string {
 export async function getCurrencyPairs(category?: string): Promise<CurrencyPair[]> {
   const cacheKey = category || 'all'
   const cached = pairsCache.get(cacheKey)
+
   if (cached && Date.now() - cached.timestamp < PAIRS_CACHE_TTL) {
     return cached.data
   }
 
   const storedPairs = await loadPairsFromStorage(cacheKey)
+
   if (storedPairs) {
-    pairsCache.set(cacheKey, { data: storedPairs, timestamp: Date.now() })
-    refreshQuotesInBackground(cacheKey, storedPairs.map(p => p.symbol))
+    pairsCache.set(cacheKey, {
+      data: storedPairs,
+      timestamp: Date.now(),
+    })
+
+    refreshQuotesInBackground(
+      cacheKey,
+      storedPairs.map(p => p.symbol)
+    )
+
     return storedPairs
   }
 
   const symbols = Object.keys(PAIR_META)
-  const isAll = !category || category === 'All' || category.toLowerCase() === 'all'
+
+  const isAll =
+    !category ||
+    category === 'All' ||
+    category.toLowerCase() === 'all'
+
   const filtered = isAll
     ? symbols
-    : symbols.filter(s => PAIR_META[s].category === category)
+    : symbols.filter(
+        s => PAIR_META[s].category === category
+      )
 
   const result = filtered.map(symbol => {
     const meta = PAIR_META[symbol]
     const fallback = FALLBACK_QUOTES[symbol]
+
     return {
       symbol,
       name: meta.name,
@@ -162,7 +178,15 @@ export async function getCurrencyPairs(category?: string): Promise<CurrencyPair[
       changePercent: fallback?.changePercent ?? 0,
       bid: fallback?.bid ?? 0,
       ask: fallback?.ask ?? 0,
-      spread: fallback?.ask && fallback?.bid ? Number(((fallback.ask - fallback.bid) * (symbol.includes('JPY') ? 100 : 10000)).toFixed(1)) : 0,
+      spread:
+        fallback?.ask && fallback?.bid
+          ? Number(
+              (
+                (fallback.ask - fallback.bid) *
+                (symbol.includes('JPY') ? 100 : 10000)
+              ).toFixed(1)
+            )
+          : 0,
       dayHigh: fallback?.dayHigh ?? 0,
       dayLow: fallback?.dayLow ?? 0,
       flag1: meta.flag1,
@@ -170,44 +194,78 @@ export async function getCurrencyPairs(category?: string): Promise<CurrencyPair[
     }
   })
 
-  pairsCache.set(cacheKey, { data: result, timestamp: Date.now() })
+  pairsCache.set(cacheKey, {
+    data: result,
+    timestamp: Date.now(),
+  })
+
   savePairsToStorage(cacheKey, result)
   refreshQuotesInBackground(cacheKey, filtered)
 
   return result
 }
 
-function refreshQuotesInBackground(cacheKey: string, symbols: string[]): void {
-  fetchSnapshot(symbols).then(result => {
-    const cached = pairsCache.get(cacheKey)
-    if (!cached) return
-    const updated = cached.data.map((pair: CurrencyPair) => {
-      const quote = result.data[pair.symbol]
-      if (!quote) return pair
-      return {
-        ...pair,
-        price: quote.price,
-        change: quote.change,
-        changePercent: quote.changePercent,
-        bid: quote.bid,
-        ask: quote.ask,
-        spread: quote.ask && quote.bid ? Number(((quote.ask - quote.bid) * (pair.symbol.includes('JPY') ? 100 : 10000)).toFixed(1)) : pair.spread,
-        dayHigh: quote.dayHigh,
-        dayLow: quote.dayLow,
-      }
+function refreshQuotesInBackground(
+  cacheKey: string,
+  symbols: string[]
+): void {
+  fetchSnapshot(symbols)
+    .then(result => {
+      const cached = pairsCache.get(cacheKey)
+      if (!cached) return
+
+      const updated = cached.data.map(
+        (pair: CurrencyPair) => {
+          const quote = result.data[pair.symbol]
+
+          if (!quote) return pair
+
+          return {
+            ...pair,
+            price: quote.price,
+            change: quote.change,
+            changePercent: quote.changePercent,
+            bid: quote.bid,
+            ask: quote.ask,
+            spread:
+              quote.ask && quote.bid
+                ? Number(
+                    (
+                      (quote.ask - quote.bid) *
+                      (pair.symbol.includes('JPY')
+                        ? 100
+                        : 10000)
+                    ).toFixed(1)
+                  )
+                : pair.spread,
+            dayHigh: quote.dayHigh,
+            dayLow: quote.dayLow,
+          }
+        }
+      )
+
+      pairsCache.set(cacheKey, {
+        data: updated,
+        timestamp: Date.now(),
+      })
+
+      savePairsToStorage(cacheKey, updated)
     })
-    pairsCache.set(cacheKey, { data: updated, timestamp: Date.now() })
-    savePairsToStorage(cacheKey, updated)
-  }).catch(() => {})
+    .catch(() => {})
 }
 
-export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | undefined> {
+export async function getCurrencyPair(
+  symbol: string
+): Promise<CurrencyPair | undefined> {
   const meta = PAIR_META[symbol]
+
   if (!meta) return undefined
 
   const cached = getCachedQuote(symbol)
+
   if (cached) {
     const isJPY = symbol.includes('JPY')
+
     return {
       symbol,
       name: meta.name,
@@ -217,7 +275,15 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
       changePercent: cached.changePercent,
       bid: cached.bid,
       ask: cached.ask,
-      spread: cached.ask && cached.bid ? Number(((cached.ask - cached.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
+      spread:
+        cached.ask && cached.bid
+          ? Number(
+              (
+                (cached.ask - cached.bid) *
+                (isJPY ? 100 : 10000)
+              ).toFixed(1)
+            )
+          : 0,
       dayHigh: cached.dayHigh,
       dayLow: cached.dayLow,
       flag1: meta.flag1,
@@ -225,10 +291,14 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
     }
   }
 
-  const storedQuote = await loadQuoteFromStorage(symbol)
+  const storedQuote =
+    await loadQuoteFromStorage(symbol)
+
   if (storedQuote) {
     const isJPY = symbol.includes('JPY')
+
     setCachedQuote(symbol, storedQuote)
+
     return {
       symbol,
       name: meta.name,
@@ -238,7 +308,15 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
       changePercent: storedQuote.changePercent,
       bid: storedQuote.bid,
       ask: storedQuote.ask,
-      spread: storedQuote.ask && storedQuote.bid ? Number(((storedQuote.ask - storedQuote.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
+      spread:
+        storedQuote.ask && storedQuote.bid
+          ? Number(
+              (
+                (storedQuote.ask - storedQuote.bid) *
+                (isJPY ? 100 : 10000)
+              ).toFixed(1)
+            )
+          : 0,
       dayHigh: storedQuote.dayHigh,
       dayLow: storedQuote.dayLow,
       flag1: meta.flag1,
@@ -249,11 +327,16 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
   const fallback = FALLBACK_QUOTES[symbol]
   const isJPY = symbol.includes('JPY')
 
-    try {
+  try {
     const result = await apiFetchQuote(symbol)
-    if (!result) throw new Error('Quote null')
+
+    if (!result) {
+      throw new Error('Quote null')
+    }
+
     setCachedQuote(symbol, result)
     saveQuoteToStorage(symbol, result)
+
     return {
       symbol,
       name: meta.name,
@@ -263,7 +346,15 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
       changePercent: result.changePercent,
       bid: result.bid,
       ask: result.ask,
-      spread: result.ask && result.bid ? Number(((result.ask - result.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
+      spread:
+        result.ask && result.bid
+          ? Number(
+              (
+                (result.ask - result.bid) *
+                (isJPY ? 100 : 10000)
+              ).toFixed(1)
+            )
+          : 0,
       dayHigh: result.dayHigh,
       dayLow: result.dayLow,
       flag1: meta.flag1,
@@ -273,6 +364,7 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
     if (fallback) {
       setCachedQuote(symbol, fallback)
       saveQuoteToStorage(symbol, fallback)
+
       return {
         symbol,
         name: meta.name,
@@ -282,45 +374,83 @@ export async function getCurrencyPair(symbol: string): Promise<CurrencyPair | un
         changePercent: fallback.changePercent,
         bid: fallback.bid,
         ask: fallback.ask,
-        spread: fallback.ask && fallback.bid ? Number(((fallback.ask - fallback.bid) * (isJPY ? 100 : 10000)).toFixed(1)) : 0,
+        spread:
+          fallback.ask && fallback.bid
+            ? Number(
+                (
+                  (fallback.ask - fallback.bid) *
+                  (isJPY ? 100 : 10000)
+                ).toFixed(1)
+              )
+            : 0,
         dayHigh: fallback.dayHigh,
         dayLow: fallback.dayLow,
         flag1: meta.flag1,
         flag2: meta.flag2,
       }
     }
+
     return undefined
   }
 }
 
+const quoteCache = new Map<
+  string,
+  { data: any; timestamp: number }
+>()
+
 function getCachedQuote(symbol: string) {
   const cached = quoteCache.get(symbol)
-  if (cached && Date.now() - cached.timestamp < 60000) {
+
+  if (
+    cached &&
+    Date.now() - cached.timestamp < 60000
+  ) {
     return cached.data
   }
+
   return null
 }
 
-function setCachedQuote(symbol: string, data: any) {
-  quoteCache.set(symbol, { data, timestamp: Date.now() })
+function setCachedQuote(
+  symbol: string,
+  data: any
+) {
+  quoteCache.set(symbol, {
+    data,
+    timestamp: Date.now(),
+  })
 }
 
-const quoteCache = new Map<string, { data: any; timestamp: number }>()
+export async function isUsernameTaken(
+  userName: string
+): Promise<boolean> {
+  const normalizedUsername =
+    userName.trim().toLowerCase()
 
-export async function isUsernameTaken(userName: string): Promise<boolean> {
-  await waitForAuth()
-  const q = query(collection(db, 'users'), where('userName', '==', userName.trim()))
-  const snap = await getDocs(q)
-  return !snap.empty
+  if (!normalizedUsername) {
+    return false
+  }
+
+  const usernameRef = doc(
+    db,
+    'usernames',
+    normalizedUsername
+  )
+
+  const snapshot = await getDoc(usernameRef)
+
+  return snapshot.exists()
 }
 
 export async function getUserProfile(): Promise<UserProfile> {
   await waitForAuth()
+
   const userId = getCurrentUserId()
 
   const defaultProfile: UserProfile = {
     id: userId,
-    userId: userId,
+    userId,
     userName: getCurrentUserName(),
     email: getCurrentUserEmail(),
     plan: 'free',
@@ -332,58 +462,96 @@ export async function getUserProfile(): Promise<UserProfile> {
   }
 
   try {
-    const userRef = doc(db, 'users', userId)
+    const userRef = doc(
+      db,
+      'users',
+      userId
+    )
+
     const userSnap = await getDoc(userRef)
 
     if (userSnap.exists()) {
       return userSnap.data() as UserProfile
     }
 
-    await setDoc(userRef, defaultProfile)
+    await setDoc(
+      userRef,
+      defaultProfile
+    )
+
     return defaultProfile
   } catch (error) {
-    console.error('Failed to load user profile:', error)
+    console.error(
+      'Failed to load user profile:',
+      error
+    )
+
     return defaultProfile
   }
 }
 
-export async function updateBalance(amount: number): Promise<void> {
+export async function updateBalance(
+  amount: number
+): Promise<void> {
   await waitForAuth()
+
   const userId = getCurrentUserId()
+
   try {
-    const userRef = doc(db, 'users', userId)
+    const userRef = doc(
+      db,
+      'users',
+      userId
+    )
+
     const userSnap = await getDoc(userRef)
 
     if (userSnap.exists()) {
-      const data = userSnap.data() as UserProfile
-      await updateDoc(userRef, {
-        accountBalance: data.accountBalance + amount,
-      })
+      const data =
+        userSnap.data() as UserProfile
+
+      await updateDoc(
+        userRef,
+        {
+          accountBalance:
+            data.accountBalance + amount,
+        }
+      )
     }
   } catch (error) {
-    console.error('Failed to update balance:', error)
+    console.error(
+      'Failed to update balance:',
+      error
+    )
   }
 }
 
-export async function saveTrade(trade: Omit<Trade, 'id'>): Promise<string> {
+export async function saveTrade(
+  trade: Omit<Trade, 'id'>
+): Promise<string> {
   await waitForAuth()
-  const docRef = await addDoc(collection(db, 'trades'), {
-    pair: trade.pair,
-    signal: trade.signal,
-    entry: trade.entry,
-    exitPrice: null,
-    stopLoss: trade.stopLoss,
-    takeProfit: trade.takeProfit,
-    riskReward: trade.riskReward,
-    confidence: Number(trade.confidence),
-    profitLoss: 0,
-    profitLossPercent: 0,
-    status: trade.status,
-    reasons: trade.reasons,
-    createdAt: serverTimestamp(),
-    closedAt: null,
-    userId: trade.userId,
-  })
+
+  const docRef = await addDoc(
+    collection(db, 'trades'),
+    {
+      pair: trade.pair,
+      signal: trade.signal,
+      entry: trade.entry,
+      exitPrice: null,
+      stopLoss: trade.stopLoss,
+      takeProfit: trade.takeProfit,
+      riskReward: trade.riskReward,
+      confidence: Number(trade.confidence),
+      profitLoss: 0,
+      profitLossPercent: 0,
+      status: trade.status,
+      reasons: trade.reasons,
+      createdAt: serverTimestamp(),
+      closedAt: null,
+      userId: trade.userId,
+    }
+  )
+
   return docRef.id
 }
 
@@ -394,38 +562,74 @@ export async function closeTrade(
   profitLossPercent: number
 ): Promise<void> {
   await waitForAuth()
-  const tradeRef = doc(db, 'trades', tradeId)
-  await updateDoc(tradeRef, {
-    exitPrice,
-    profitLoss: Number(profitLoss),
-    profitLossPercent: Number(profitLossPercent),
-    status: 'closed',
-    closedAt: serverTimestamp(),
-  })
+
+  const tradeRef = doc(
+    db,
+    'trades',
+    tradeId
+  )
+
+  await updateDoc(
+    tradeRef,
+    {
+      exitPrice,
+      profitLoss: Number(profitLoss),
+      profitLossPercent:
+        Number(profitLossPercent),
+      status: 'closed',
+      closedAt: serverTimestamp(),
+    }
+  )
 
   const userId = getCurrentUserId()
-  const userRef = doc(db, 'users', userId)
+
+  const userRef = doc(
+    db,
+    'users',
+    userId
+  )
+
   const userSnap = await getDoc(userRef)
 
   if (userSnap.exists()) {
-    const data = userSnap.data() as UserProfile
-    await updateDoc(userRef, {
-      accountBalance: data.accountBalance + profitLoss,
-      totalPL: data.totalPL + profitLoss,
-      totalTrades: data.totalTrades + 1,
-      winCount: profitLoss > 0 ? data.winCount + 1 : data.winCount,
-    })
+    const data =
+      userSnap.data() as UserProfile
+
+    await updateDoc(
+      userRef,
+      {
+        accountBalance:
+          data.accountBalance + profitLoss,
+        totalPL:
+          data.totalPL + profitLoss,
+        totalTrades:
+          data.totalTrades + 1,
+        winCount:
+          profitLoss > 0
+            ? data.winCount + 1
+            : data.winCount,
+      }
+    )
   }
 }
 
-export async function deleteTrade(tradeId: string): Promise<void> {
+export async function deleteTrade(
+  tradeId: string
+): Promise<void> {
   await waitForAuth()
-  await deleteDoc(doc(db, 'trades', tradeId))
+
+  await deleteDoc(
+    doc(db, 'trades', tradeId)
+  )
 }
 
-export async function getUserTrades(tradeLimit = 50): Promise<Trade[]> {
+export async function getUserTrades(
+  tradeLimit = 50
+): Promise<Trade[]> {
   await waitForAuth()
+
   const userId = getCurrentUserId()
+
   try {
     const q = query(
       collection(db, 'trades'),
@@ -433,25 +637,42 @@ export async function getUserTrades(tradeLimit = 50): Promise<Trade[]> {
     )
 
     const snapshot = await getDocs(q)
+
     const trades = snapshot.docs
       .filter(d => d.id)
       .map(d => ({
         id: d.id,
         ...d.data(),
-        createdAt: d.data().createdAt?.toMillis?.() ?? Date.now(),
-        closedAt: d.data().closedAt?.toMillis?.() ?? null,
+        createdAt:
+          d.data().createdAt?.toMillis?.() ??
+          Date.now(),
+        closedAt:
+          d.data().closedAt?.toMillis?.() ??
+          null,
       })) as Trade[]
 
-    return trades.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).slice(0, tradeLimit)
+    return trades
+      .sort(
+        (a, b) =>
+          (b.createdAt ?? 0) -
+          (a.createdAt ?? 0)
+      )
+      .slice(0, tradeLimit)
   } catch (error) {
-    console.error('Failed to load trades:', error)
+    console.error(
+      'Failed to load trades:',
+      error
+    )
+
     return []
   }
 }
 
 export async function getUserOpenTrades(): Promise<Trade[]> {
   await waitForAuth()
+
   const userId = getCurrentUserId()
+
   try {
     const q = query(
       collection(db, 'trades'),
@@ -460,58 +681,126 @@ export async function getUserOpenTrades(): Promise<Trade[]> {
     )
 
     const snapshot = await getDocs(q)
+
     const trades = snapshot.docs.map(d => ({
       id: d.id,
       ...d.data(),
-      createdAt: d.data().createdAt?.toMillis?.() ?? Date.now(),
+      createdAt:
+        d.data().createdAt?.toMillis?.() ??
+        Date.now(),
     })) as Trade[]
 
-    return trades.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    return trades.sort(
+      (a, b) =>
+        (b.createdAt ?? 0) -
+        (a.createdAt ?? 0)
+    )
   } catch (error) {
-    console.error('Failed to load open trades:', error)
+    console.error(
+      'Failed to load open trades:',
+      error
+    )
+
     return []
   }
 }
 
 export async function getMarketNews(): Promise<MarketNews[]> {
   try {
-    const { fetchNews } = await import('../api/client')
+    const { fetchNews } =
+      await import('../api/client')
+
     const newsData = await fetchNews()
 
     const results: MarketNews[] = []
+
     for (const item of newsData) {
       results.push({
-        id: item.id || String(Math.random()),
-        currency: item.currency || 'FX',
-        title: item.headline || item.title || '',
-        time: formatTimeAgo(item.datetime || Math.floor(Date.now() / 1000)),
+        id:
+          item.id ||
+          String(Math.random()),
+        currency:
+          item.currency || 'FX',
+        title:
+          item.headline ||
+          item.title ||
+          '',
+        time: formatTimeAgo(
+          item.datetime ||
+            Math.floor(
+              Date.now() / 1000
+            )
+        ),
         url: item.url || '',
       })
-      if (results.length >= 10) break
+
+      if (results.length >= 10) {
+        break
+      }
     }
 
     return results
   } catch (error) {
-    console.error('Failed to fetch news:', error)
+    console.error(
+      'Failed to fetch news:',
+      error
+    )
+
     return [
-      { id: '1', currency: 'USD', title: 'Unable to load news — pull to refresh', time: 'now', url: '' },
+      {
+        id: '1',
+        currency: 'USD',
+        title:
+          'Unable to load news — pull to refresh',
+        time: 'now',
+        url: '',
+      },
     ]
   }
 }
 
-function formatTimeAgo(unix: number): string {
+function formatTimeAgo(
+  unix: number
+): string {
   if (!unix) return 'now'
-  const diff = Math.floor(Date.now() / 1000) - unix
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+
+  const diff =
+    Math.floor(
+      Date.now() / 1000
+    ) - unix
+
+  if (diff < 60) {
+    return 'just now'
+  }
+
+  if (diff < 3600) {
+    return `${Math.floor(
+      diff / 60
+    )}m ago`
+  }
+
+  if (diff < 86400) {
+    return `${Math.floor(
+      diff / 3600
+    )}h ago`
+  }
+
+  return `${Math.floor(
+    diff / 86400
+  )}d ago`
 }
 
 export function getGreeting(): string {
   const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 18) return 'Good afternoon'
+
+  if (hour < 12) {
+    return 'Good morning'
+  }
+
+  if (hour < 18) {
+    return 'Good afternoon'
+  }
+
   return 'Good evening'
 }
 
@@ -519,15 +808,36 @@ export function isMarketOpen(): boolean {
   const now = new Date()
   const day = now.getUTCDay()
   const hour = now.getUTCHours()
-  if (day === 0 || day === 6) return false
-  if (hour >= 22 || hour < 0) return false
+
+  if (day === 0 || day === 6) {
+    return false
+  }
+
+  if (hour >= 22 || hour < 0) {
+    return false
+  }
+
   return true
 }
 
-export function formatPrice(price: number): string {
-  if (!Number.isFinite(price)) return '0.00000'
-  if (Math.abs(price) >= 1000) return price.toFixed(2)
-  if (Math.abs(price) >= 100) return price.toFixed(3)
-  if (Math.abs(price) >= 1) return price.toFixed(5)
+export function formatPrice(
+  price: number
+): string {
+  if (!Number.isFinite(price)) {
+    return '0.00000'
+  }
+
+  if (Math.abs(price) >= 1000) {
+    return price.toFixed(2)
+  }
+
+  if (Math.abs(price) >= 100) {
+    return price.toFixed(3)
+  }
+
+  if (Math.abs(price) >= 1) {
+    return price.toFixed(5)
+  }
+
   return price.toFixed(5)
 }

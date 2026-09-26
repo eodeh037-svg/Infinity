@@ -57,22 +57,22 @@ function flatSin(n: number, wiggle = 0.0005): Candle[] {
   return toCandles(closes, wiggle);
 }
 
-// deterministic keltner-squeeze + low-ATR fixture (confirmed in probing: keltner=true, atrRegime=low)
+
 const SQUEEZE_LOW_ATR = () => flatSin(300);
 
-// deterministic down-trend fixture with high ATR regime (confirmed: atrRegime=high, signal SELL)
+
 const DOWN_HIGH_ATR = () => toCandles(trendCloses(300, -0.09, 0.5, 22));
 
-// deterministic up-trend fixture (confirmed: supertrendDirection UP)
+
 const UP_TREND = () => toCandles(trendCloses(300, 0.09, 0.5, 11));
 
 type ConfidenceArgs = Parameters<typeof calculateConfidence>;
 
 function baseConfidenceArgs(overrides: Partial<Record<keyof ConfidenceArgs, unknown>> = {}): ConfidenceArgs {
   const args: ConfidenceArgs = [
-    14, // buyScore
-    7, // sellScore
-    'BUY', // signal
+    14, 
+    7, 
+    'BUY', 
     { strong: false, bullish: true, gapPercent: 3 },
     'NEUTRAL',
     58,

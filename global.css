@@ -1,3 +1,28 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --background: 240 6% 3.5%;
+  --background-deep: 240 14% 2%;
+  --onyx: 240 20% 1%;
+  --card: 240 6% 8%;
+  --elevated: 240 5% 13%;
+  --input: 240 6% 9%;
+  --chip: 240 5% 13%;
+  --chip-icon: 240 4% 20%;
+  --border: 240 4% 13%;
+  --border-soft: 240 4% 20%;
+  --foreground: 0 0% 98%;
+  --muted: 240 5% 62%;
+  --muted-soft: 240 4% 45%;
+  --disabled: 240 4% 34%;
+  --dot: 240 4% 20%;
+  --accent: 262 50% 52%;
+  --accent-strong: 262 50% 44%;
+  --accent-soft: 262 70% 90%;
+  --success: 150 40% 47%;
+  --danger: 0 55% 52%;
+  --warning: 40 50% 52%;
+  --chart: 217 55% 55%;
+}

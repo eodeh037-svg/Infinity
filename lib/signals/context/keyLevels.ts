@@ -242,14 +242,14 @@ function detectBreakout(
   const currentClose = candles[lastIndex].close
   const previousClose = candles[lastIndex - 1].close
 
-  // Check resistance breakout
+  
   for (const zone of resistanceZones) {
     const zoneTop = zone.zone[1]
     const wasBelow = previousClose < zoneTop
     const brokeAbove = currentClose > zoneTop
 
     if (wasBelow && brokeAbove) {
-      // Check if price closed back below (false breakout)
+      
       const movedAboveThenBack = recentCandles.some(
         c => c.high > zoneTop && c.close < zoneTop
       )
@@ -257,7 +257,7 @@ function detectBreakout(
       return 'breakout_up'
     }
 
-    // Check false breakout: price was above, moved below, came back
+    
     const wasAbove = previousClose > zone.zone[0]
     const brokeBelow = currentClose < zone.zone[0]
     if (wasAbove && brokeBelow) {
@@ -268,7 +268,7 @@ function detectBreakout(
     }
   }
 
-  // Check support breakout
+  
   for (const zone of supportZones) {
     const zoneBottom = zone.zone[0]
     const wasAbove = previousClose > zoneBottom

@@ -77,8 +77,10 @@ function deriveStructure(result: SignalResult): 'bullish' | 'bearish' | 'neutral
 function analyzeMarketContext(candles: Candle[], result: SignalResult): MarketContext {
   const lastIndex = candles.length - 1
 
-  const regime = detectTrendRegime(result)
-  const levels = detectKeyLevels(candles, result.entry, result.atr)
+  const fallbackEntry = candles[lastIndex]?.close ?? 0
+  const regimeResult = result.entry === null ? { ...result, entry: fallbackEntry } : result
+  const regime = detectTrendRegime(regimeResult)
+  const levels = detectKeyLevels(candles, result.entry ?? fallbackEntry, result.atr)
   const volatility = detectVolatilityRegime(candles, [], result.atrPercentile)
 
   return {
@@ -148,6 +150,11 @@ function analyzeSingleTimeframe(
     structure: deriveStructure(result),
     context,
   }
+}
+
+export function overallConfidence(normalizedBuy: number, normalizedSell: number): number {
+  const dominant = Math.max(normalizedBuy, normalizedSell)
+  return Math.min(100, Math.max(0, Math.round(dominant * 100)))
 }
 
 function aggregateSignals(
@@ -236,7 +243,7 @@ function aggregateSignals(
     }
   }
 
-  const score = Math.round((normalizedBuy + normalizedSell) * 50)
+  const score = overallConfidence(normalizedBuy, normalizedSell)
   const strength = calculateStrength(scoreDifference, available.length, trendAlignment)
 
   return { signal, score, strength, reasons }
@@ -308,7 +315,7 @@ export function analyzeMultiTimeframe(
 
   const marketCtx = { trend, momentum, structure, volatility }
 
-  // Aggregate context across timeframes
+  
   const contextResult = aggregateContextAcrossTimeframes(analyses, signal, strategy)
 
   const fullReasons = [
@@ -357,12 +364,12 @@ function aggregateContextAcrossTimeframes(
     }
   }
 
-  // Use the highest-weighted timeframe's context as the primary context
-  // but consider consensus across timeframes
+  
+  
   const sortedByWeight = [...available].sort((a, b) => b.weight - a.weight)
   const primaryContext = sortedByWeight[0].context
 
-  // Check regime consensus across timeframes
+  
   const regimeCounts = { uptrend: 0, downtrend: 0, range: 0, unclear: 0 }
   for (const a of available) {
     regimeCounts[a.context.regime.regime]++
@@ -371,13 +378,13 @@ function aggregateContextAcrossTimeframes(
   const dominantRegime = (Object.entries(regimeCounts) as [string, number][])
     .sort((a, b) => b[1] - a[1])[0]
 
-  // Check if higher timeframes agree with the signal direction
+  
   const higherTFs = sortedByWeight.slice(0, Math.min(2, sortedByWeight.length))
   const higherTFRegimes = higherTFs.map(a => a.context.regime.regime)
 
   const contextReasoning: string[] = []
 
-  // Evaluate primary context
+  
   const primaryAssessment = aggregateContext(
     signal,
     sortedByWeight[0].confidence,
@@ -385,11 +392,11 @@ function aggregateContextAcrossTimeframes(
     strategy.contextConfig
   )
 
-  // Adjust based on multi-timeframe consensus
+  
   let finalAdjustment = primaryAssessment.confidenceAdjustment
   let finalAlignment = primaryAssessment.alignment
 
-  // If higher timeframes have strong conflicting regime, increase caution
+  
   const higherTFConflict = higherTFs.some(a => {
     const regime = a.context.regime.regime
     if (signal === 'BUY' && regime === 'downtrend' && a.context.regime.strength === 'strong') return true
@@ -405,7 +412,7 @@ function aggregateContextAcrossTimeframes(
     }
   }
 
-  // If most timeframes agree on context alignment, boost slightly
+  
   const supportiveCount = available.filter(a => {
     const regime = a.context.regime.regime
     if (signal === 'BUY' && regime === 'uptrend') return true
@@ -419,7 +426,7 @@ function aggregateContextAcrossTimeframes(
     contextReasoning.push('Most timeframes show confirming context')
   }
 
-  // Generate context reasoning
+  
   if (primaryContext.regime.coverage !== 'unavailable') {
     contextReasoning.push(`Regime: ${primaryContext.regime.regime} (${primaryContext.regime.strength})`)
   }
