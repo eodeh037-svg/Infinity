@@ -31,6 +31,7 @@ import { generateMultiTimeframeSignal } from '../../lib/api/client';
 import { Candle } from '../../lib/indicators/types';
 import { useTheme } from '../../lib/theme';
 import { getAssetType, getMarketStatus } from '../../lib/services/marketStatus';
+import { startLiveChartPrefetch } from '../../lib/api/liveChart';
 import { CurrencyPair } from '../../types';
 import AppCard from '../../component/ui/AppCard';
 import AppButton from '../../component/ui/AppButton';
@@ -313,7 +314,11 @@ export default function PairDetailScreen() {
               variant="secondary"
               className="flex-1"
               icon={<Ionicons name="stats-chart" size={18} color={colors.accent} />}
-              onPress={() => router.push(`/signal/chart?symbol=${pair.symbol.replace('/', '_')}`)}
+              onPress={() => {
+                const symbol = pair.symbol.replace('/', '_');
+                startLiveChartPrefetch(symbol, '4H');
+                router.push(`/signal/chart?symbol=${symbol}`);
+              }}
             />
             <AppButton
               title={generating ? 'Analyzing...' : 'Generate AI Signal'}
