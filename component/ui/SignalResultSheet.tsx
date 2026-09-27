@@ -30,6 +30,7 @@ type Props = {
   accountSize: string;
   onCopy?: (value: string, field: string) => void;
   onSave: () => void;
+  saving?: boolean;
   onClose: () => void;
 };
 
@@ -40,6 +41,7 @@ export default function SignalResultSheet({
   accountSize,
   onCopy,
   onSave,
+  saving = false,
   onClose,
 }: Props) {
   const { colors } = useTheme();
@@ -280,7 +282,12 @@ export default function SignalResultSheet({
       )}
 
       {tradable ? (
-        <AppButton title="Take This Trade" onPress={onSave} className="w-full" />
+        <AppButton
+          title="Take This Trade"
+          loading={saving}
+          onPress={onSave}
+          className="w-full"
+        />
       ) : null}
 
       <Pressable onPress={onClose} className="mt-3 items-center py-3">

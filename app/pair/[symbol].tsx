@@ -50,6 +50,7 @@ export default function PairDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [showSignalModal, setShowSignalModal] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [authoritativeSignal, setAuthoritativeSignal] = useState<AuthoritativeSignal | null>(null);
   const [multiTimeframeResult, setMultiTimeframeResult] = useState<MultiTimeframeResult | null>(
@@ -134,6 +135,7 @@ export default function PairDetailScreen() {
   }
 
   async function handleSaveTrade() {
+    if (saving) return;
     if (!authoritativeSignal || !pair) return;
     if (authoritativeSignal.signal === 'HOLD' || authoritativeSignal.entry === null) {
       Alert.alert(
@@ -150,6 +152,7 @@ export default function PairDetailScreen() {
       return;
     }
 
+    setSaving(true);
     try {
       await saveTrade({
         pair: pair.symbol,
@@ -176,6 +179,8 @@ export default function PairDetailScreen() {
     } catch (error) {
       console.error('Failed to save trade:', error);
       Alert.alert('Error', 'Failed to save trade.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -375,6 +380,7 @@ export default function PairDetailScreen() {
                   Alert.alert('Copied', `${field} ${value} copied`);
                 }}
                 onSave={handleSaveTrade}
+                saving={saving}
                 onClose={handleCloseModal}
               />
             ) : null}
