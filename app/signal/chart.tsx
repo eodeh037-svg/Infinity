@@ -3,21 +3,17 @@ import { useState, useEffect, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { getTwelveData } from '../../lib/api/finnhub';
 import { Candle } from '../../lib/indicators/types';
 import CandleChart from '../../component/CandleChart';
 import { useTheme } from '../../lib/theme';
 import { formatPrice } from '../../component/ui/money';
+import {
+  LIVE_CHART_TIMEFRAMES,
+  consumeLiveChartPrefetch,
+  fetchLiveChart,
+} from '../../lib/api/liveChart';
 
-const TIMEFRAMES = ['15M', '1H', '4H', '1D', '1W'];
-
-const INTERVAL_MAP: Record<string, string> = {
-  '15M': '15min',
-  '1H': '1h',
-  '4H': '4h',
-  '1D': '1day',
-  '1W': '1week',
-};
+const TIMEFRAMES = LIVE_CHART_TIMEFRAMES;
 
 export default function ChartScreen() {
   const { colors } = useTheme();
@@ -41,12 +37,12 @@ export default function ChartScreen() {
   async function loadChartData() {
     if (!symbol) return;
     try {
-      const decoded = symbol.replace(/_/g, '/');
-      const [base, quote] = decoded.split('/');
-      const interval = INTERVAL_MAP[selectedTimeframe] || '4h';
-      const candleResult = await getTwelveData(base, quote, interval, '100');
+      const prefetched = consumeLiveChartPrefetch(symbol, selectedTimeframe);
+      const candleResult = prefetched
+        ? await prefetched
+        : await fetchLiveChart(symbol, selectedTimeframe);
       setCandles(candleResult.data);
-      setPairName(decoded);
+      setPairName(symbol.replace(/_/g, '/'));
     } catch (error) {
       console.error('Failed to load chart data:', error);
     } finally {
