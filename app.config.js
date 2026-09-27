@@ -1,4 +1,7 @@
-{
+const googleServicesFile =
+  process.env.GOOGLE_SERVICES_JSON ?? './google-services.json';
+
+module.exports = {
   "expo": {
     "name": "Infinity",
     "slug": "infinity",
@@ -48,7 +51,7 @@
         "backgroundColor": "#000000"
       },
       "package": "com.odeh.infinity",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": googleServicesFile
     },
     "extra": {
       "router": {},
@@ -57,4 +60,4 @@
       }
     }
   }
-}
+};
